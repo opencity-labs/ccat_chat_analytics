@@ -1,26 +1,84 @@
-# Oc Analytics
+# OpenCity Analytics
 
-[![awesome plugin](https://custom-icon-badges.demolab.com/static/v1?label=&message=awesome+plugin&color=383938&style=for-the-badge&logo=cheshire_cat_ai)](https://)  
-[![Awesome plugin](https://custom-icon-badges.demolab.com/static/v1?label=&message=Awesome+plugin&color=000000&style=for-the-badge&logo=cheshire_cat_ai)](https://)  
-[![awesome plugin](https://custom-icon-badges.demolab.com/static/v1?label=&message=awesome+plugin&color=F4F4F5&style=for-the-badge&logo=cheshire_cat_black)](https://)
+[![OpenCity Analytics](https://custom-icon-badges.demolab.com/static/v1?label=&message=awesome+plugin&color=F4F4F5&style=for-the-badge&logo=cheshire_cat_black)](https://)
 
-Write here all the useful information about your plugin.
+A comprehensive analytics plugin for the Cheshire Cat AI that exposes Prometheus metrics about chat usage, sentiment, and RAG performance.
 
-This repository is the template to automate the release of official Cheshire Cat AI plugins. 
+## Description
 
-## Usage
+**OpenCity Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, and document retrieval usage.
 
-1. Create a new repository clicking on the `Use this template` button.
-2. Clone your new repo directly in the Cat's `plugins` folder.
-3. Run the `setup.py` script:
-```bash
-python setup.py
-```
-The script will prompt you to write the name of your plugin and make an initial setup setting the name in the files.
+This plugin is essential for monitoring the health, engagement, and quality of your AI service.
 
-4. Start developing!
+## Features
 
-> **Important**
-> A new release of your plugin is triggered every time you set a new `version` in the `plugin.json` file.
-> Please, remember to set it correctly every time you want to release an update.
+- **Prometheus Endpoint**: Exposes a `/custom/metrics` endpoint compatible with Prometheus.
+- **Sentiment Analysis**: Automatically analyzes the sentiment of both user and bot messages.
+- **RAG Tracking**: Tracks which documents are being retrieved from memory.
+- **Session Stats**: Monitors active sessions and message depth.
+
+## Metrics Explained
+
+Detailed breakdown of the metrics exposed by this plugin:
+
+### 1. Message Volume
+**Metric Name:** `chat_messages_total`
+**Type:** Counter
+**Labels:** 
+- `sender`: Who sent the message (`user` or `bot`).
+
+**Description:**
+Counts the total number of messages exchanged. Use this to track overall traffic and load.
+*Example Query:* `sum(rate(chat_messages_total[5m]))` to see message rate.
+
+### 2. Sentiment Analysis
+**Metric Name:** `chat_sentiment_score`
+**Type:** Histogram
+**Labels:** 
+- `sender`: Who sent the message.
+
+**Description:**
+Measures the sentiment polarity of messages on a scale from -1.0 (Negative) to 1.0 (Positive).
+*Example Query:* `histogram_quantile(0.5, sum(rate(chat_sentiment_score_bucket[1h])) by (le))` to see the median sentiment over time.
+
+### 3. New Sessions
+**Metric Name:** `chat_sessions_total`
+**Type:** Counter
+
+**Description:**
+Counts the number of unique users/sessions that have started a conversation since the last restart.
+*Example Query:* `increase(chat_sessions_total[1d])` to see daily active users.
+
+### 4. RAG Usage
+**Metric Name:** `rag_documents_retrieved_total`
+**Type:** Counter
+**Labels:** 
+- `source`: The source metadata of the retrieved document.
+
+**Description:**
+Tracks how often documents are retrieved from the vector memory. This helps identify which knowledge base sources are most useful.
+*Example Query:* `topk(5, sum(rate(rag_documents_retrieved_total[1h])) by (source))` to see the top 5 most used sources.
+
+### 5. Conversation Depth
+**Metric Name:** `chat_messages_per_chat_avg`
+**Type:** Gauge
+
+**Description:**
+The average number of messages per chat session (since restart). High numbers indicate engaging conversations.
+
+### 6. Max Conversation Depth
+**Metric Name:** `chat_messages_per_chat_max`
+**Type:** Gauge
+
+**Description:**
+The maximum number of messages in a single chat session.
+
+## Requirements
+
+- Cheshire Cat AI
+- Prometheus (for data collection)
+- Grafana (recommended for visualization)
+
+---
+Owner: OpenCity Labs
 

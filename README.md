@@ -1,12 +1,12 @@
-# OpenCity Analytics
+# Chat Analytics
 
-[![OpenCity Analytics](https://custom-icon-badges.demolab.com/static/v1?label=&message=awesome+plugin&color=F4F4F5&style=for-the-badge&logo=cheshire_cat_black)](https://)
+[![Chat Analytics](https://custom-icon-badges.demolab.com/static/v1?label=&message=awesome+plugin&color=F4F4F5&style=for-the-badge&logo=cheshire_cat_black)](https://)
 
 A comprehensive analytics plugin for the Cheshire Cat AI that exposes Prometheus metrics about chat usage, sentiment, and RAG performance.
 
 ## Description
 
-**OpenCity Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, and document retrieval usage.
+**Chat Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, and document retrieval usage.
 
 This plugin is essential for monitoring the health, engagement, and quality of your AI service.
 
@@ -38,7 +38,17 @@ Counts the total number of messages exchanged. Use this to track overall traffic
 - `sender`: Who sent the message.
 
 **Description:**
-Measures the sentiment polarity of messages on a scale from -1.0 (Negative) to 1.0 (Positive).
+Measures the sentiment polarity of messages.
+
+**How it works:**
+This plugin uses [spaCy](https://spacy.io/) with the `xx_sent_ud_sm` multilingual model and the `spacytextblob` pipeline. It automatically downloads the necessary model on the first run. This allows for sentiment analysis across multiple languages, not just English.
+
+**Interpreting the Score:**
+The score is a float value ranging from **-1.0** to **1.0**:
+- **-1.0**: Very Negative (e.g., "This is terrible", "I hate this")
+- **0.0**: Neutral (e.g., "The sky is blue", "What time is it?")
+- **+1.0**: Very Positive (e.g., "This is amazing", "I love this")
+
 *Example Query:* `histogram_quantile(0.5, sum(rate(chat_sentiment_score_bucket[1h])) by (le))` to see the median sentiment over time.
 
 ### 3. New Sessions
@@ -72,6 +82,14 @@ The average number of messages per chat session (since restart). High numbers in
 
 **Description:**
 The maximum number of messages in a single chat session.
+
+## Configuration
+
+You can enable or disable specific groups of metrics via the Cheshire Cat Admin UI:
+
+- **Enable Message Metrics**: Tracks total messages, sessions, and conversation depth.
+- **Enable Sentiment Analysis**: Tracks sentiment of messages (uses `spaCy` multilingual model).
+- **Enable RAG Metrics**: Tracks retrieved documents from memory.
 
 ## Requirements
 

@@ -58,6 +58,14 @@ def _get_spacy_model(model_name: str):
 
     try:
         import spacy
+        from spacytextblob.spacytextblob import SpacyTextBlob
+        from spacy.language import Language
+        
+        # Register spacytextblob factory if not present (required for some languages/setups)
+        if not Language.has_factory("spacytextblob"):
+            @Language.factory("spacytextblob")
+            def create_spacytextblob(nlp, name):
+                return SpacyTextBlob(nlp)
         
         # First try to load the model
         try:

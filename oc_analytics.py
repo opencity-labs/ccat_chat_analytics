@@ -1,6 +1,7 @@
 import time
 import subprocess
 import sys
+import json
 from cat.mad_hatter.decorators import hook, endpoint
 from cat.log import log
 from fastapi.responses import Response
@@ -20,7 +21,14 @@ def _check_spacy_availability() -> bool:
         import spacy
         _spacy_available = True
     except ImportError:
-        log.warning("SpaCy not installed. Install with: pip install spacy")
+        log.warning(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "spacy_check",
+            "data": {
+                "available": False,
+                "message": "SpaCy not installed. Install with: pip install spacy"
+            }
+        }))
         _spacy_available = False
     
     return _spacy_available
@@ -28,22 +36,55 @@ def _check_spacy_availability() -> bool:
 def _download_model(model_name: str) -> bool:
     """Download a SpaCy model if not present."""
     try:
-        log.info(f"Downloading SpaCy model: {model_name}")
+        log.info(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_download_start",
+            "data": {
+                "model_name": model_name
+            }
+        }))
         result = subprocess.run([
             sys.executable, "-m", "spacy", "download", model_name
         ], capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
-            log.info(f"Successfully downloaded {model_name}")
+            log.info(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_download_success",
+                "data": {
+                    "model_name": model_name
+                }
+            }))
             return True
         else:
-            log.error(f"Failed to download {model_name}: {result.stderr}")
+            log.error(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_download_error",
+                "data": {
+                    "model_name": model_name,
+                    "error": result.stderr
+                }
+            }))
             return False
     except subprocess.TimeoutExpired:
-        log.error(f"Timeout downloading {model_name}")
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_download_error",
+            "data": {
+                "model_name": model_name,
+                "error": "Timeout downloading model"
+            }
+        }))
         return False
     except Exception as e:
-        log.error(f"Error downloading {model_name}: {e}")
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_download_error",
+            "data": {
+                "model_name": model_name,
+                "error": str(e)
+            }
+        }))
         return False
 
 def _get_spacy_model(model_name: str):
@@ -72,17 +113,45 @@ def _get_spacy_model(model_name: str):
             nlp = spacy.load(model_name)
         except OSError:
             # Model not found, try to download it
-            log.info(f"SpaCy model '{model_name}' not found, attempting to download...")
+            log.info(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_download_start",
+                "data": {
+                    "model_name": model_name,
+                    "message": "Model not found, attempting to download"
+                }
+            }))
             if _download_model(model_name):
                 # Try loading again after download
                 try:
                     nlp = spacy.load(model_name)
-                    log.info(f"Successfully loaded downloaded model: {model_name}")
+                    log.info(json.dumps({
+                        "component": "ccat_oc_analytics",
+                        "event": "model_load_success",
+                        "data": {
+                            "model_name": model_name,
+                            "message": "Successfully loaded downloaded model"
+                        }
+                    }))
                 except OSError:
-                    log.error(f"Failed to load model '{model_name}' even after download")
+                    log.error(json.dumps({
+                        "component": "ccat_oc_analytics",
+                        "event": "model_load_error",
+                        "data": {
+                            "model_name": model_name,
+                            "error": "Failed to load model even after download"
+                        }
+                    }))
                     return None
             else:
-                log.error(f"Failed to download model '{model_name}'")
+                log.error(json.dumps({
+                    "component": "ccat_oc_analytics",
+                    "event": "model_download_error",
+                    "data": {
+                        "model_name": model_name,
+                        "error": "Failed to download model"
+                    }
+                }))
                 return None
         
         # Add spacytextblob to the pipeline if not already present
@@ -90,11 +159,25 @@ def _get_spacy_model(model_name: str):
             nlp.add_pipe("spacytextblob")
             
         _spacy_models[model_name] = nlp
-        log.info(f"Loaded SpaCy model: {model_name} with spacytextblob")
+        log.info(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_load_success",
+            "data": {
+                "model_name": model_name,
+                "message": "Loaded SpaCy model with spacytextblob"
+            }
+        }))
         return nlp
 
     except ImportError as e:
-        log.error(f"Error importing SpaCy or spacytextblob: {e}")
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_load_error",
+            "data": {
+                "model_name": model_name,
+                "error": f"Error importing SpaCy or spacytextblob: {e}"
+            }
+        }))
         return None
 
 def analyze_sentiment(text: str):
@@ -108,7 +191,13 @@ def analyze_sentiment(text: str):
             doc = nlp(text)
             return doc._.blob.polarity
         except Exception as e:
-            log.error(f"Error in sentiment analysis: {e}")
+            log.error(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "sentiment_analysis_error",
+                "data": {
+                    "error": str(e)
+                }
+            }))
             return 0.0
     return 0.0
 
@@ -169,7 +258,13 @@ def after_cat_recalls_memories(cat):
                 source = doc.metadata.get('source', 'unknown')
                 RAG_DOCUMENTS_RETRIEVED.labels(source=source).inc()
         except Exception as e:
-            log.error(f"Error tracking RAG metrics: {e}")
+            log.error(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "rag_metrics_error",
+                "data": {
+                    "error": str(e)
+                }
+            }))
 
 @hook
 def before_cat_sends_message(message, cat):

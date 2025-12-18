@@ -97,6 +97,36 @@ You can enable or disable specific groups of metrics via the Cheshire Cat Admin 
 - Prometheus (for data collection)
 - Grafana (recommended for visualization)
 
+## Log Schema
+
+This plugin uses structured JSON logging to facilitate monitoring and debugging. All logs follow this base structure:
+
+```json
+{
+  "component": "ccat_oc_analytics",
+  "event": "<event_name>",
+  "data": {
+    ... <event_specific_data>
+  }
+}
+```
+
+### Event Types
+
+| Event Name | Description | Data Fields |
+|------------|-------------|-------------|
+| `spacy_check` | Logged when checking for SpaCy availability | `available` |
+| `model_download_start` | Logged when starting to download a SpaCy model | `model_name` |
+| `model_download_success` | Logged when a SpaCy model is successfully downloaded | `model_name` |
+| `model_download_error` | Logged when a SpaCy model download fails | `model_name`, `error` |
+| `model_load_success` | Logged when a SpaCy model is successfully loaded | `model_name` |
+| `model_load_error` | Logged when a SpaCy model load fails | `model_name`, `error` |
+| `sentiment_analysis_error` | Logged when sentiment analysis fails | `error` |
+| `rag_metrics_error` | Logged when RAG metrics tracking fails | `error` |
+
 ---
-Owner: OpenCity Labs
+
+Author: OpenCity Labs
+
+LinkedIn: https://www.linkedin.com/company/opencity-italia/
 

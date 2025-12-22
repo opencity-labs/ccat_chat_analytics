@@ -259,10 +259,6 @@ def after_cat_recalls_memories(cat):
 def before_cat_sends_message(message, cat):
     settings = cat.mad_hatter.get_plugin().load_settings()
 
-    if settings.get("enable_message_metrics", True):
-        # Track bot message
-        MESSAGE_COUNTER.labels(sender='bot').inc()
-
     # Sentiment tracking for bot removed as requested
     
     # Token Usage & LLM Name

@@ -2,19 +2,20 @@
 
 [![Chat Analytics](https://custom-icon-badges.demolab.com/static/v1?label=&message=awesome+plugin&color=F4F4F5&style=for-the-badge&logo=cheshire_cat_black)](https://)
 
-A comprehensive analytics plugin for the Cheshire Cat AI that exposes Prometheus metrics about chat usage, sentiment, and RAG performance.
+A comprehensive analytics plugin for the Cheshire Cat AI that exposes Prometheus metrics about chat usage, sentiment, token usage, and RAG performance.
 
 ## Description
 
-**Chat Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, and document retrieval usage.
+**Chat Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, token usage, and document retrieval usage.
 
 This plugin is essential for monitoring the health, engagement, and quality of your AI service.
 
 ## Features
 
 - **Prometheus Endpoint**: Exposes a `/custom/metrics` endpoint compatible with Prometheus.
-- **Sentiment Analysis**: Automatically analyzes the sentiment of both user and bot messages.
-- **RAG Tracking**: Tracks which documents are being retrieved from memory.
+- **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using a multilingual Transformer model.
+- **Token Usage**: Tracks input and output tokens per LLM model.
+- **RAG Tracking**: Tracks which documents are being retrieved from memory (with source clustering).
 - **Session Stats**: Monitors active sessions and message depth.
 
 ## Metrics Explained
@@ -25,58 +26,75 @@ Detailed breakdown of the metrics exposed by this plugin:
 **Metric Name:** `chat_messages_total`
 **Type:** Counter
 **Labels:** 
-- `sender`: Who sent the message (`user` or `bot`).
+- `sender`: Who sent the message (`user`).
 
 **Description:**
-Counts the total number of messages exchanged. Use this to track overall traffic and load.
-*Example Query:* `sum(rate(chat_messages_total[5m]))` to see message rate.
+Counts the total number of messages sent by users.
 
 ### 2. Sentiment Analysis
 **Metric Name:** `chat_sentiment_score`
 **Type:** Histogram
 **Labels:** 
-- `sender`: Who sent the message.
+- `sender`: Who sent the message (`user`).
 
 **Description:**
-Measures the sentiment polarity of messages.
+Measures the sentiment polarity of messages (-1.0 to 1.0). Used to calculate average sentiment.
+
+**Metric Name:** `chat_sentiment_counts`
+**Type:** Counter
+**Labels:**
+- `sender`: Who sent the message (`user`).
+- `type`: Sentiment category (`happy`, `sad`, `neutral`).
+
+**Description:**
+Counts the number of messages falling into each sentiment category:
+- **Sad**: Score < -0.2
+- **Neutral**: -0.2 <= Score <= 0.2
+- **Happy**: Score > 0.2
 
 **How it works:**
-This plugin uses [spaCy](https://spacy.io/) with the `xx_sent_ud_sm` multilingual model and the `spacytextblob` pipeline. It automatically downloads the necessary model on the first run. This allows for sentiment analysis across multiple languages, not just English.
+This plugin uses the `lxyuan/distilbert-base-multilingual-cased-sentiments-student` Transformer model. It is a lightweight, multilingual model optimized for CPU usage.
 
-**Interpreting the Score:**
-The score is a float value ranging from **-1.0** to **1.0**:
-- **-1.0**: Very Negative (e.g., "This is terrible", "I hate this")
-- **0.0**: Neutral (e.g., "The sky is blue", "What time is it?")
-- **+1.0**: Very Positive (e.g., "This is amazing", "I love this")
+### 3. Token Usage
+**Metric Name:** `llm_input_tokens_total` / `llm_output_tokens_total`
+**Type:** Counter
+**Labels:**
+- `model`: The name of the LLM model used.
 
-*Example Query:* `histogram_quantile(0.5, sum(rate(chat_sentiment_score_bucket[1h])) by (le))` to see the median sentiment over time.
+**Description:**
+Total number of tokens sent to (input) and received from (output) the LLM.
 
-### 3. New Sessions
+**Metric Name:** `llm_input_tokens_avg` / `llm_output_tokens_avg`
+**Type:** Gauge
+**Labels:**
+- `model`: The name of the LLM model used.
+
+**Description:**
+Average number of tokens per interaction.
+
+### 4. New Sessions
 **Metric Name:** `chat_sessions_total`
 **Type:** Counter
 
 **Description:**
 Counts the number of unique users/sessions that have started a conversation since the last restart.
-*Example Query:* `increase(chat_sessions_total[1d])` to see daily active users.
 
-### 4. RAG Usage
+### 5. RAG Usage
 **Metric Name:** `rag_documents_retrieved_total`
 **Type:** Counter
 **Labels:** 
-- `source`: The source metadata of the retrieved document.
+- `source`: The source metadata of the retrieved document (clustered by path).
 
 **Description:**
-Tracks how often documents are retrieved from the vector memory. This helps identify which knowledge base sources are most useful.
-*Example Query:* `topk(5, sum(rate(rag_documents_retrieved_total[1h])) by (source))` to see the top 5 most used sources.
+Tracks how often documents are retrieved from the vector memory. Sources are clustered (e.g., `example.com/services/s1` -> `example.com/services`) to provide better aggregation.
 
-### 5. Conversation Depth
+### 6. Conversation Depth
 **Metric Name:** `chat_messages_per_chat_avg`
 **Type:** Gauge
 
 **Description:**
-The average number of messages per chat session (since restart). High numbers indicate engaging conversations.
+The average number of messages per chat session (since restart).
 
-### 6. Max Conversation Depth
 **Metric Name:** `chat_messages_per_chat_max`
 **Type:** Gauge
 
@@ -88,7 +106,7 @@ The maximum number of messages in a single chat session.
 You can enable or disable specific groups of metrics via the Cheshire Cat Admin UI:
 
 - **Enable Message Metrics**: Tracks total messages, sessions, and conversation depth.
-- **Enable Sentiment Analysis**: Tracks sentiment of messages (uses `spaCy` multilingual model).
+- **Enable Sentiment Analysis**: Tracks sentiment of messages.
 - **Enable RAG Metrics**: Tracks retrieved documents from memory.
 
 ## Requirements
@@ -96,6 +114,7 @@ You can enable or disable specific groups of metrics via the Cheshire Cat Admin 
 - Cheshire Cat AI
 - Prometheus (for data collection)
 - Grafana (recommended for visualization)
+- `transformers` and `torch` python packages (installed automatically if missing, but recommended to pre-install).
 
 ## Log Schema
 
@@ -115,14 +134,13 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 
 | Event Name | Description | Data Fields |
 |------------|-------------|-------------|
-| `spacy_check` | Logged when checking for SpaCy availability | `available` |
-| `model_download_start` | Logged when starting to download a SpaCy model | `model_name` |
-| `model_download_success` | Logged when a SpaCy model is successfully downloaded | `model_name` |
-| `model_download_error` | Logged when a SpaCy model download fails | `model_name`, `error` |
-| `model_load_success` | Logged when a SpaCy model is successfully loaded | `model_name` |
-| `model_load_error` | Logged when a SpaCy model load fails | `model_name`, `error` |
+| `import_error` | Logged when transformers/torch are missing | `message` |
+| `model_load_start` | Logged when starting to load the model | `model_name` |
+| `model_load_success` | Logged when model is successfully loaded | `model_name` |
+| `model_load_error` | Logged when model load fails | `error` |
 | `sentiment_analysis_error` | Logged when sentiment analysis fails | `error` |
 | `rag_metrics_error` | Logged when RAG metrics tracking fails | `error` |
+| `token_tracking_error` | Logged when token tracking fails | `error` |
 
 ---
 

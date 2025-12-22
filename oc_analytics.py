@@ -1,195 +1,88 @@
 import time
-import subprocess
-import sys
 import json
 from cat.mad_hatter.decorators import hook, endpoint
 from cat.log import log
+from cat.db import crud
 from fastapi.responses import Response
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry
 
-# Global variables for SpaCy models to avoid repeated loading
-_spacy_models = {}
-_spacy_available = None
+# Global variables for Transformers pipeline
+_sentiment_pipeline = None
 
-def _check_spacy_availability() -> bool:
-    """Check if SpaCy is available."""
-    global _spacy_available
-    if _spacy_available is not None:
-        return _spacy_available
-    
+def _get_sentiment_pipeline():
+    """Get or load the Transformers sentiment pipeline."""
+    global _sentiment_pipeline
+    if _sentiment_pipeline:
+        return _sentiment_pipeline
+        
     try:
-        import spacy
-        _spacy_available = True
-    except ImportError:
-        log.warning(json.dumps({
-            "component": "ccat_oc_analytics",
-            "event": "spacy_check",
-            "data": {
-                "available": False,
-                "message": "SpaCy not installed. Install with: pip install spacy"
-            }
-        }))
-        _spacy_available = False
-    
-    return _spacy_available
-
-def _download_model(model_name: str) -> bool:
-    """Download a SpaCy model if not present."""
-    try:
+        from transformers import pipeline
+        # Use a distilled multilingual model for better CPU performance
+        # lxyuan/distilbert-base-multilingual-cased-sentiments-student
+        # ~540MB, supports many languages, faster than BERT
+        model_name = "lxyuan/distilbert-base-multilingual-cased-sentiments-student"
+        
         log.info(json.dumps({
             "component": "ccat_oc_analytics",
-            "event": "model_download_start",
+            "event": "model_load_start",
             "data": {
                 "model_name": model_name
             }
         }))
-        result = subprocess.run([
-            sys.executable, "-m", "spacy", "download", model_name
-        ], capture_output=True, text=True, timeout=300)
         
-        if result.returncode == 0:
-            log.info(json.dumps({
-                "component": "ccat_oc_analytics",
-                "event": "model_download_success",
-                "data": {
-                    "model_name": model_name
-                }
-            }))
-            return True
-        else:
-            log.error(json.dumps({
-                "component": "ccat_oc_analytics",
-                "event": "model_download_error",
-                "data": {
-                    "model_name": model_name,
-                    "error": result.stderr
-                }
-            }))
-            return False
-    except subprocess.TimeoutExpired:
-        log.error(json.dumps({
-            "component": "ccat_oc_analytics",
-            "event": "model_download_error",
-            "data": {
-                "model_name": model_name,
-                "error": "Timeout downloading model"
-            }
-        }))
-        return False
-    except Exception as e:
-        log.error(json.dumps({
-            "component": "ccat_oc_analytics",
-            "event": "model_download_error",
-            "data": {
-                "model_name": model_name,
-                "error": str(e)
-            }
-        }))
-        return False
-
-def _get_spacy_model(model_name: str):
-    """Get or load a SpaCy model, downloading if necessary."""
-    global _spacy_models
-    
-    if model_name in _spacy_models:
-        return _spacy_models[model_name]
-    
-    if not _check_spacy_availability():
-        return None
-
-    try:
-        import spacy
-        from spacytextblob.spacytextblob import SpacyTextBlob
-        from spacy.language import Language
+        _sentiment_pipeline = pipeline("sentiment-analysis", model=model_name, top_k=None)
         
-        # Register spacytextblob factory if not present (required for some languages/setups)
-        if not Language.has_factory("spacytextblob"):
-            @Language.factory("spacytextblob")
-            def create_spacytextblob(nlp, name):
-                return SpacyTextBlob(nlp)
-        
-        # First try to load the model
-        try:
-            nlp = spacy.load(model_name)
-        except OSError:
-            # Model not found, try to download it
-            log.info(json.dumps({
-                "component": "ccat_oc_analytics",
-                "event": "model_download_start",
-                "data": {
-                    "model_name": model_name,
-                    "message": "Model not found, attempting to download"
-                }
-            }))
-            if _download_model(model_name):
-                # Try loading again after download
-                try:
-                    nlp = spacy.load(model_name)
-                    log.info(json.dumps({
-                        "component": "ccat_oc_analytics",
-                        "event": "model_load_success",
-                        "data": {
-                            "model_name": model_name,
-                            "message": "Successfully loaded downloaded model"
-                        }
-                    }))
-                except OSError:
-                    log.error(json.dumps({
-                        "component": "ccat_oc_analytics",
-                        "event": "model_load_error",
-                        "data": {
-                            "model_name": model_name,
-                            "error": "Failed to load model even after download"
-                        }
-                    }))
-                    return None
-            else:
-                log.error(json.dumps({
-                    "component": "ccat_oc_analytics",
-                    "event": "model_download_error",
-                    "data": {
-                        "model_name": model_name,
-                        "error": "Failed to download model"
-                    }
-                }))
-                return None
-        
-        # Add spacytextblob to the pipeline if not already present
-        if "spacytextblob" not in nlp.pipe_names:
-            nlp.add_pipe("spacytextblob")
-            
-        _spacy_models[model_name] = nlp
         log.info(json.dumps({
             "component": "ccat_oc_analytics",
             "event": "model_load_success",
             "data": {
-                "model_name": model_name,
-                "message": "Loaded SpaCy model with spacytextblob"
+                "model_name": model_name
             }
         }))
-        return nlp
+        return _sentiment_pipeline
 
-    except ImportError as e:
+    except ImportError:
+        log.warning(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "import_error",
+            "data": {
+                "message": "Transformers or Torch not installed. Install with: pip install transformers torch"
+            }
+        }))
+        return None
+    except Exception as e:
         log.error(json.dumps({
             "component": "ccat_oc_analytics",
             "event": "model_load_error",
             "data": {
-                "model_name": model_name,
-                "error": f"Error importing SpaCy or spacytextblob: {e}"
+                "error": str(e)
             }
         }))
         return None
 
 def analyze_sentiment(text: str):
-    """Analyze sentiment using SpaCy + spacytextblob."""
-    # Use a multilingual model
-    model_name = "xx_sent_ud_sm" 
-    nlp = _get_spacy_model(model_name)
+    """Analyze sentiment using Transformers (Multilingual)."""
+    pipe = _get_sentiment_pipeline()
     
-    if nlp:
+    if pipe:
         try:
-            doc = nlp(text)
-            return doc._.blob.polarity
+            # Truncate text to avoid token limit errors (DistilBERT limit is 512 tokens)
+            # Using char limit as rough proxy to avoid tokenization overhead just for check
+            if len(text) > 2000:
+                text = text[:2000]
+                
+            results = pipe(text)
+            # results is [[{'label': 'positive', 'score': 0.9}, ...]]
+            
+            scores = {r['label']: r['score'] for r in results[0]}
+            
+            # Calculate weighted score (-1 to 1)
+            pos = scores.get('positive', 0.0)
+            neg = scores.get('negative', 0.0)
+            
+            # Result is positive score minus negative score
+            return pos - neg
+            
         except Exception as e:
             log.error(json.dumps({
                 "component": "ccat_oc_analytics",
@@ -201,16 +94,112 @@ def analyze_sentiment(text: str):
             return 0.0
     return 0.0
 
+# Custom registry to avoid global pollution and control output
+_registry = CollectorRegistry()
+
 # Metrics
-MESSAGE_COUNTER = Counter('chat_messages_total', 'Total number of messages', ['sender'])
-SENTIMENT_SCORE = Histogram('chat_sentiment_score', 'Sentiment score of messages', ['sender'])
-NEW_SESSIONS = Counter('chat_sessions_total', 'Total number of new chat sessions')
-RAG_DOCUMENTS_RETRIEVED = Counter('rag_documents_retrieved_total', 'Total number of documents retrieved from RAG', ['source'])
-AVG_MESSAGES_PER_CHAT = Gauge('chat_messages_per_chat_avg', 'Average number of messages per chat')
-MAX_MESSAGES_PER_CHAT = Gauge('chat_messages_per_chat_max', 'Maximum number of messages in a single chat')
+MESSAGE_COUNTER = Counter('chat_messages_total', 'Total number of messages', ['sender'], registry=_registry)
+# Custom buckets for sentiment (-1 to 1)
+SENTIMENT_SCORE = Histogram('chat_sentiment_score', 'Sentiment score of messages', ['sender'], 
+                            buckets=[-1.0, -0.5, -0.2, 0.0, 0.2, 0.5, 1.0], registry=_registry)
+SENTIMENT_COUNTS = Counter('chat_sentiment_counts', 'Sentiment counts (sad, neutral, happy)', ['sender', 'type'], registry=_registry)
+
+NEW_SESSIONS = Counter('chat_sessions_total', 'Total number of new chat sessions', registry=_registry)
+RAG_DOCUMENTS_RETRIEVED = Counter('rag_documents_retrieved_total', 'Total number of documents retrieved from RAG', ['source'], registry=_registry)
+AVG_MESSAGES_PER_CHAT = Gauge('chat_messages_per_chat_avg', 'Average number of messages per chat', registry=_registry)
+MAX_MESSAGES_PER_CHAT = Gauge('chat_messages_per_chat_max', 'Maximum number of messages in a single chat', registry=_registry)
+
+LLM_INPUT_TOKENS_TOTAL = Counter('llm_input_tokens_total', 'Total input tokens', ['model'], registry=_registry)
+LLM_OUTPUT_TOKENS_TOTAL = Counter('llm_output_tokens_total', 'Total output tokens', ['model'], registry=_registry)
+LLM_INPUT_TOKENS_AVG = Gauge('llm_input_tokens_avg', 'Average input tokens', ['model'], registry=_registry)
+LLM_OUTPUT_TOKENS_AVG = Gauge('llm_output_tokens_avg', 'Average output tokens', ['model'], registry=_registry)
 
 # Global state for simple tracking (Note: this resets on restart and grows with unique users)
 USER_MESSAGE_COUNTS = {}
+_llm_stats = {}
+
+def _update_llm_stats(model_name, input_tokens, output_tokens):
+    if model_name not in _llm_stats:
+        _llm_stats[model_name] = {
+            'count': 0,
+            'total_input': 0,
+            'total_output': 0
+        }
+    
+    stats = _llm_stats[model_name]
+    stats['count'] += 1
+    stats['total_input'] += input_tokens
+    stats['total_output'] += output_tokens
+    
+    # Update Gauges
+    if stats['count'] > 0:
+        avg_input = stats['total_input'] / stats['count']
+        avg_output = stats['total_output'] / stats['count']
+        
+        LLM_INPUT_TOKENS_AVG.labels(model=model_name).set(avg_input)
+        LLM_OUTPUT_TOKENS_AVG.labels(model=model_name).set(avg_output)
+
+def _get_llm_name(cat):
+    try:
+        # Try to get from settings first as it is more reliable for the configured name
+        selected_llm = crud.get_setting_by_name("llm_selected")
+        if selected_llm:
+             config_name = selected_llm.get("value", {}).get("name")
+             if config_name:
+                 llm_settings = crud.get_setting_by_name(config_name)
+                 if llm_settings:
+                     vals = llm_settings.get("value", {})
+                     # Check common fields for model name
+                     return vals.get("model_name") or vals.get("model") or vals.get("repo_id") or config_name
+        
+        # Fallback to inspecting the object
+        llm = cat._llm
+        if hasattr(llm, "model_name"):
+            return llm.model_name
+        if hasattr(llm, "model"):
+            return llm.model
+        if hasattr(llm, "repo_id"):
+            return llm.repo_id
+        return llm.__class__.__name__
+    except:
+        return "unknown"
+
+def _track_sentiment(sender, text):
+    sentiment = analyze_sentiment(text)
+    SENTIMENT_SCORE.labels(sender=sender).observe(sentiment)
+    
+    sentiment_type = "neutral"
+    if sentiment < -0.2:
+        sentiment_type = "sad"
+    elif sentiment > 0.2:
+        sentiment_type = "happy"
+        
+    SENTIMENT_COUNTS.labels(sender=sender, type=sentiment_type).inc()
+
+def _cluster_source(source: str) -> str:
+    if not source:
+        return "unknown"
+    
+    # Remove trailing slash if present
+    source = source.rstrip('/')
+    
+    # Handle URLs with protocol
+    if '://' in source:
+        try:
+            protocol, rest = source.split('://', 1)
+            if rest.count('/') > 1:
+                rest = rest.rsplit('/', 1)[0]
+            return f"{protocol}://{rest}"
+        except ValueError:
+            pass
+
+    # If there is more than one slash, remove the last segment
+    # e.g. example.com/services/s1 -> example.com/services
+    # e.g. example.com/services -> example.com/services
+    if source.count('/') > 1:
+        return source.rsplit('/', 1)[0]
+        
+    return source
 
 @hook
 def before_cat_reads_message(user_message_json, cat):
@@ -237,8 +226,7 @@ def before_cat_reads_message(user_message_json, cat):
     if settings.get("enable_sentiment_metrics", True):
         text = user_message_json.get("text", "")
         if text:
-            sentiment = analyze_sentiment(text)
-            SENTIMENT_SCORE.labels(sender='user').observe(sentiment)
+            _track_sentiment('user', text)
             
     return user_message_json
 
@@ -256,7 +244,8 @@ def after_cat_recalls_memories(cat):
             doc = memory[0]
             if hasattr(doc, 'metadata'):
                 source = doc.metadata.get('source', 'unknown')
-                RAG_DOCUMENTS_RETRIEVED.labels(source=source).inc()
+                clustered_source = _cluster_source(source)
+                RAG_DOCUMENTS_RETRIEVED.labels(source=clustered_source).inc()
         except Exception as e:
             log.error(json.dumps({
                 "component": "ccat_oc_analytics",
@@ -274,15 +263,62 @@ def before_cat_sends_message(message, cat):
         # Track bot message
         MESSAGE_COUNTER.labels(sender='bot').inc()
 
-    # Sentiment
-    if settings.get("enable_sentiment_metrics", True):
-        text = message.get("content", "")
-        if text:
-            sentiment = analyze_sentiment(text)
-            SENTIMENT_SCORE.labels(sender='bot').observe(sentiment)
+    # Sentiment tracking for bot removed as requested
+    
+    # Token Usage & LLM Name
+    try:
+        # Get last interaction
+        if cat.working_memory.model_interactions:
+            last_interaction = cat.working_memory.model_interactions[-1]
+            if last_interaction.model_type == "llm":
+                input_tokens = last_interaction.input_tokens
+                output_tokens = last_interaction.output_tokens
+                
+                model_name = _get_llm_name(cat)
+                
+                # Update Metrics
+                LLM_INPUT_TOKENS_TOTAL.labels(model=model_name).inc(input_tokens)
+                LLM_OUTPUT_TOKENS_TOTAL.labels(model=model_name).inc(output_tokens)
+                
+                _update_llm_stats(model_name, input_tokens, output_tokens)
+                
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "token_tracking_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
         
     return message
 
 @endpoint.get("/metrics")
 def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    data = generate_latest(_registry).decode('utf-8')
+    # Filter out _created lines to remove "garbage"
+    lines = []
+    for line in data.split('\n'):
+        # Check if line is a metric definition or comment
+        if line.startswith('#'):
+            lines.append(line)
+            continue
+            
+        # Check if metric name ends with _created
+        # Metric line format: name{labels} value [timestamp]
+        parts = line.split(' ')
+        if parts:
+            metric_part = parts[0]
+            # Remove labels to check name
+            metric_name = metric_part.split('{')[0]
+            
+            if metric_name.endswith('_created'):
+                continue
+                
+            if metric_name == 'chat_sentiment_score_bucket':
+                continue
+                
+        lines.append(line)
+        
+    filtered_data = "\n".join(lines)
+    return Response(filtered_data, media_type=CONTENT_TYPE_LATEST)

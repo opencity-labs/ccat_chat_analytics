@@ -6,6 +6,8 @@ from cat.db import crud
 from fastapi.responses import Response
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry
 
+from cat.convo.messages import CatMessage
+
 # Global variables for Transformers pipeline
 _sentiment_pipeline = None
 
@@ -114,9 +116,16 @@ LLM_OUTPUT_TOKENS_TOTAL = Counter('llm_output_tokens_total', 'Total output token
 LLM_INPUT_TOKENS_AVG = Gauge('llm_input_tokens_avg', 'Average input tokens', ['model'], registry=_registry)
 LLM_OUTPUT_TOKENS_AVG = Gauge('llm_output_tokens_avg', 'Average output tokens', ['model'], registry=_registry)
 
+NO_RELEVANT_MEMORY_COUNTER = Counter('chat_no_relevant_memory_total', 'Total number of times no relevant memory was found', registry=_registry)
+
+RESPONSE_TIME_SUM = Counter('chat_response_time_seconds_sum', 'Sum of response times in seconds', registry=_registry)
+RESPONSE_TIME_COUNT = Counter('chat_response_time_seconds_count', 'Count of responses for average time calculation', registry=_registry)
+RESPONSE_TIME_MAX = Gauge('chat_response_time_seconds_max', 'Maximum response time in seconds', registry=_registry)
+
 # Global state for simple tracking (Note: this resets on restart and grows with unique users)
 USER_MESSAGE_COUNTS = {}
 _llm_stats = {}
+_max_response_time = 0.0
 
 def _update_llm_stats(model_name, input_tokens, output_tokens):
     if model_name not in _llm_stats:
@@ -203,6 +212,9 @@ def _cluster_source(source: str) -> str:
 
 @hook
 def before_cat_reads_message(user_message_json, cat):
+    # Store start time for response time calculation
+    cat.working_memory.oc_analytics_start_time = time.time()
+
     settings = cat.mad_hatter.get_plugin().load_settings()
 
     if settings.get("enable_message_metrics", True):
@@ -255,9 +267,68 @@ def after_cat_recalls_memories(cat):
                 }
             }))
 
+@hook(priority=0)
+def fast_reply(message, cat):
+    # Check if this is the default message from context_guardian_enricher
+    # We check this here because fast_reply bypasses before_cat_sends_message
+    try:
+        if not message:
+            return message
+            
+        # Get the text from the message (CatMessage or dict)
+        text = None
+        if isinstance(message, CatMessage):
+            text = message.text
+        elif isinstance(message, dict):
+            text = message.get("output") or message.get("text")
+            
+        if text:
+            # Try to get the default message from context_guardian_enricher settings
+            # We access the plugin directly if available
+            plugin = cat.mad_hatter.plugins.get("ccat_context_guardian_enricher")
+            if plugin:
+                settings = plugin.load_settings()
+                default_message = settings.get('default_message', 'Sorry, I can\'t help you.')
+                
+                if text == default_message:
+                    NO_RELEVANT_MEMORY_COUNTER.inc()
+                    
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "fast_reply_check_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
+        
+    return message
+
 @hook
 def before_cat_sends_message(message, cat):
-    settings = cat.mad_hatter.get_plugin().load_settings()
+    # Response Time Tracking
+    # We do this here to capture the full processing time for normal responses
+    # Fast replies (like the default message) bypass this hook, so they are automatically excluded
+    try:
+        if hasattr(cat.working_memory, 'oc_analytics_start_time'):
+            start_time = cat.working_memory.oc_analytics_start_time
+            duration = time.time() - start_time
+            
+            RESPONSE_TIME_SUM.inc(duration)
+            RESPONSE_TIME_COUNT.inc()
+            
+            global _max_response_time
+            if duration > _max_response_time:
+                _max_response_time = duration
+                RESPONSE_TIME_MAX.set(_max_response_time)
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "response_time_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
 
     # Sentiment tracking for bot removed as requested
     

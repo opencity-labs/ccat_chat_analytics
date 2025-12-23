@@ -16,6 +16,8 @@ This plugin is essential for monitoring the health, engagement, and quality of y
 - **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using a multilingual Transformer model.
 - **Token Usage**: Tracks input and output tokens per LLM model.
 - **RAG Tracking**: Tracks which documents are being retrieved from memory (with source clustering).
+- **Response Time**: Tracks average and max response times (excluding default messages).
+- **Missed Context**: Tracks when no relevant memory is found (requires Context Guardian).
 - **Session Stats**: Monitors active sessions and message depth.
 
 ## Metrics Explained
@@ -101,6 +103,27 @@ The average number of messages per chat session (since restart).
 **Description:**
 The maximum number of messages in a single chat session.
 
+### 7. Response Time
+**Metric Name:** `chat_response_time_seconds_sum` / `chat_response_time_seconds_count`
+**Type:** Counter
+
+**Description:**
+Used to calculate the average response time of the bot (excluding fast replies/default messages).
+*Example Query:* `rate(chat_response_time_seconds_sum[1h]) / rate(chat_response_time_seconds_count[1h])`
+
+**Metric Name:** `chat_response_time_seconds_max`
+**Type:** Gauge
+
+**Description:**
+The maximum response time recorded.
+
+### 8. Missed Context
+**Metric Name:** `chat_no_relevant_memory_total`
+**Type:** Counter
+
+**Description:**
+Counts how many times the bot could not find relevant memories and sent the default fallback message (requires `ccat_context_guardian_enricher`).
+
 ## Configuration
 
 You can enable or disable specific groups of metrics via the Cheshire Cat Admin UI:
@@ -141,6 +164,8 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 | `sentiment_analysis_error` | Logged when sentiment analysis fails | `error` |
 | `rag_metrics_error` | Logged when RAG metrics tracking fails | `error` |
 | `token_tracking_error` | Logged when token tracking fails | `error` |
+| `response_time_error` | Logged when response time tracking fails | `error` |
+| `fast_reply_check_error` | Logged when checking for fast reply fails | `error` |
 
 ---
 

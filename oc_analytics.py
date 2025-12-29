@@ -1,5 +1,8 @@
 import time
 import json
+import os
+import tomli
+from cat.mad_hatter.mad_hatter import MadHatter
 from cat.mad_hatter.decorators import hook, endpoint
 from cat.log import log
 from cat.db import crud
@@ -121,6 +124,9 @@ NO_RELEVANT_MEMORY_COUNTER = Counter('chat_no_relevant_memory_total', 'Total num
 RESPONSE_TIME_SUM = Counter('chat_response_time_seconds_sum', 'Sum of response times in seconds', registry=_registry)
 RESPONSE_TIME_COUNT = Counter('chat_response_time_seconds_count', 'Count of responses for average time calculation', registry=_registry)
 RESPONSE_TIME_MAX = Gauge('chat_response_time_seconds_max', 'Maximum response time in seconds', registry=_registry)
+
+CHATBOT_INSTANCE_INFO = Gauge('chatbot_instance_info', 'Global version information (Core and Frontend)', ['core_version', 'frontend_version'], registry=_registry)
+CHATBOT_PLUGIN_INFO = Gauge('chatbot_plugin_info', 'Plugin version information', ['plugin_id', 'version'], registry=_registry)
 
 # Global state for simple tracking (Note: this resets on restart and grows with unique users)
 USER_MESSAGE_COUNTS = {}
@@ -360,8 +366,52 @@ def before_cat_sends_message(message, cat):
         
     return message
 
+def _update_version_metrics():
+    # Core Version
+    core_version = "unknown"
+    try:
+        # Try to find pyproject.toml in current directory or parent directories
+        pyproject_path = "pyproject.toml"
+        if not os.path.exists(pyproject_path):
+             # Try one level up
+             pyproject_path = "../pyproject.toml"
+        
+        if os.path.exists(pyproject_path):
+            with open(pyproject_path, "rb") as f:
+                data = tomli.load(f)
+                core_version = data.get("project", {}).get("version", "unknown")
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "core_version_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
+
+    # Frontend Version - currently we have no reliable way to get this from backend
+    frontend_version = "unknown"
+
+    CHATBOT_INSTANCE_INFO.labels(core_version=core_version, frontend_version=frontend_version).set(1)
+
+    # Plugin Versions
+    try:
+        mad_hatter = MadHatter()
+        for plugin_id, plugin in mad_hatter.plugins.items():
+            version = plugin.manifest.get("version", "unknown")
+            CHATBOT_PLUGIN_INFO.labels(plugin_id=plugin_id, version=version).set(1)
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "plugin_version_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
+
 @endpoint.get("/metrics")
 def metrics():
+    _update_version_metrics()
     data = generate_latest(_registry).decode('utf-8')
     # Filter out _created lines to remove "garbage"
     lines = []

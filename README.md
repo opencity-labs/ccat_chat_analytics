@@ -124,6 +124,25 @@ The maximum response time recorded.
 **Description:**
 Counts how many times the bot could not find relevant memories and sent the default fallback message (requires `ccat_context_guardian_enricher`).
 
+### 9. Version Info
+**Metric Name:** `chatbot_instance_info`
+**Type:** Gauge
+**Labels:**
+- `core_version`: The version of the Cheshire Cat Core.
+- `frontend_version`: The version of the Admin UI (if available).
+
+**Description:**
+Tracks the version of the running instance. Always set to 1.
+
+**Metric Name:** `chatbot_plugin_info`
+**Type:** Gauge
+**Labels:**
+- `plugin_id`: The ID of the plugin.
+- `version`: The version of the plugin.
+
+**Description:**
+Tracks the version of all installed plugins. Always set to 1.
+
 ## Configuration
 
 You can enable or disable specific groups of metrics via the Cheshire Cat Admin UI:
@@ -166,6 +185,8 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 | `token_tracking_error` | Logged when token tracking fails | `error` |
 | `response_time_error` | Logged when response time tracking fails | `error` |
 | `fast_reply_check_error` | Logged when checking for fast reply fails | `error` |
+| `core_version_error` | Logged when core version retrieval fails | `error` |
+| `plugin_version_error` | Logged when plugin version retrieval fails | `error` |
 
 ---
 

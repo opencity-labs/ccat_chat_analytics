@@ -38,6 +38,7 @@ All metrics exposed by this plugin:
 | **Tokens** | `chatbot_llm_output_tokens_total` | Counter | `model` | Total output tokens received from LLM |
 | **Tokens** | `chatbot_llm_input_tokens_avg` | Gauge | `model` | Average input tokens per interaction |
 | **Tokens** | `chatbot_llm_output_tokens_avg` | Gauge | `model` | Average output tokens per interaction |
+| **Tokens** | `chatbot_embedding_tokens_total` | Counter | `model` | Total tokens used for embeddings |
 | **RAG** | `chatbot_rag_documents_retrieved_total` | Counter | `source` (clustered path) | Documents retrieved from vector memory |
 | **Response Time** | `chatbot_chat_response_time_seconds_sum` | Counter | - | Sum of response times (for calculating average) |
 | **Response Time** | `chatbot_chat_response_time_seconds_count` | Counter | - | Count of responses (for calculating average) |

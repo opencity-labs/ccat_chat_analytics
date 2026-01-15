@@ -4,6 +4,7 @@ import os
 import sys
 import subprocess
 import tomli
+import tiktoken
 from cat.mad_hatter.mad_hatter import MadHatter
 from cat.mad_hatter.decorators import hook, endpoint
 from cat.log import log
@@ -291,6 +292,8 @@ LLM_OUTPUT_TOKENS_TOTAL = Counter('chatbot_llm_output_tokens_total', 'Total outp
 LLM_INPUT_TOKENS_AVG = Gauge('chatbot_llm_input_tokens_avg', 'Average input tokens', ['model'], registry=_registry)
 LLM_OUTPUT_TOKENS_AVG = Gauge('chatbot_llm_output_tokens_avg', 'Average output tokens', ['model'], registry=_registry)
 
+EMBEDDING_TOKENS_TOTAL = Counter('chatbot_embedding_tokens_total', 'Total tokens used for embeddings', ['model'], registry=_registry)
+
 NO_RELEVANT_MEMORY_COUNTER = Counter('chatbot_chat_no_relevant_memory_total', 'Total number of times no relevant memory was found', registry=_registry)
 
 RESPONSE_TIME_SUM = Counter('chatbot_chat_response_time_seconds_sum', 'Sum of response times in seconds', registry=_registry)
@@ -350,6 +353,57 @@ def _get_llm_name(cat):
         return llm.__class__.__name__
     except:
         return "unknown"
+
+def _get_embedder_name(cat):
+    try:
+        # Try to get from settings first as it is more reliable for the configured name
+        selected_embedder = crud.get_setting_by_name("embedder_selected")
+        if selected_embedder:
+             config_name = selected_embedder.get("value", {}).get("name")
+             if config_name:
+                 embedder_settings = crud.get_setting_by_name(config_name)
+                 if embedder_settings:
+                     vals = embedder_settings.get("value", {})
+                     # Check common fields for model name
+                     return vals.get("model_name") or vals.get("model") or config_name
+        
+        # Fallback to inspecting the object
+        embedder = cat.embedder
+        if hasattr(embedder, "model_name"):
+            return embedder.model_name
+        if hasattr(embedder, "model"):
+            return embedder.model
+        return embedder.__class__.__name__
+    except:
+        return "unknown"
+
+@hook
+def before_rabbithole_insert_memory(doc, cat):
+    try:
+        text = doc.page_content
+        model_name = _get_embedder_name(cat)
+        
+        # Count tokens - using tiktoken's cl100k_base as a standard approximation
+        # Ideally we'd use the specific tokenizer for the model, but this is a reasonable default
+        try:
+            encoding = tiktoken.get_encoding("cl100k_base")
+            tokens = len(encoding.encode(text))
+        except Exception:
+             # Fallback if tiktoken fails
+             tokens = len(text.split()) 
+
+        EMBEDDING_TOKENS_TOTAL.labels(model=model_name).inc(tokens)
+        
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "embedding_token_tracking_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
+    
+    return doc
 
 def _track_sentiment(sender, text):
     """Track sentiment polarity and classify into negative/neutral/positive.

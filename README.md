@@ -6,12 +6,13 @@ A comprehensive analytics plugin for the Cheshire Cat AI that exposes Prometheus
 
 ## Description
 
-**Chat Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, token usage, and document retrieval usage.
+**Chat Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, token usage, and document retrieval usage. All metrics are automatically enabled and collected without any configuration needed.
 
 This plugin is essential for monitoring the health, engagement, and quality of your AI service.
 
 ## Features
 
+- **Zero Configuration**: All metrics are automatically collected without any setup required.
 - **Prometheus Endpoint**: Exposes a `/custom/metrics` endpoint compatible with Prometheus.
 - **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using spaCy with multilingual support.
 - **Token Usage**: Tracks input and output tokens per LLM model.
@@ -19,149 +20,57 @@ This plugin is essential for monitoring the health, engagement, and quality of y
 - **Response Time**: Tracks average and max response times (excluding default messages).
 - **Missed Context**: Tracks when no relevant memory is found (requires Context Guardian).
 - **Session Stats**: Monitors active sessions and message depth.
+- **Version Tracking**: Monitors Core and plugin versions for deployment tracking.
 
 ## Metrics Explained
 
-Detailed breakdown of the metrics exposed by this plugin:
+All metrics exposed by this plugin:
 
-### 1. Message Volume
-**Metric Name:** `chatbot_chat_messages_total`
-**Type:** Counter
-**Labels:** 
-- `sender`: Who sent the message (`user`).
+| Category | Metric Name | Type | Labels | Description |
+|----------|-------------|------|--------|-------------|
+| **Messages** | `chatbot_chat_messages_total` | Counter | `sender` (user) | Total messages sent by users |
+| **Sessions** | `chatbot_chat_sessions_total` | Counter | - | Unique users/sessions since restart |
+| **Conversation Depth** | `chatbot_chat_messages_per_chat_avg` | Gauge | - | Average messages per chat session |
+| **Conversation Depth** | `chatbot_chat_messages_per_chat_max` | Gauge | - | Maximum messages in a single session |
+| **Sentiment** | `chatbot_chat_sentiment_score` | Histogram | `sender` (user) | Sentiment polarity (-1.0 to 1.0) for calculating averages |
+| **Sentiment** | `chatbot_chat_sentiment_counts` | Counter | `sender` (user), `type` (positive/neutral/negative) | Count of messages by sentiment category |
+| **Tokens** | `chatbot_llm_input_tokens_total` | Counter | `model` | Total input tokens sent to LLM |
+| **Tokens** | `chatbot_llm_output_tokens_total` | Counter | `model` | Total output tokens received from LLM |
+| **Tokens** | `chatbot_llm_input_tokens_avg` | Gauge | `model` | Average input tokens per interaction |
+| **Tokens** | `chatbot_llm_output_tokens_avg` | Gauge | `model` | Average output tokens per interaction |
+| **RAG** | `chatbot_rag_documents_retrieved_total` | Counter | `source` (clustered path) | Documents retrieved from vector memory |
+| **Response Time** | `chatbot_chat_response_time_seconds_sum` | Counter | - | Sum of response times (for calculating average) |
+| **Response Time** | `chatbot_chat_response_time_seconds_count` | Counter | - | Count of responses (for calculating average) |
+| **Response Time** | `chatbot_chat_response_time_seconds_max` | Gauge | - | Maximum response time recorded |
+| **Context** | `chatbot_chat_no_relevant_memory_total` | Counter | - | Times no relevant memory found (requires Context Guardian) |
+| **Version** | `chatbot_instance_info` | Gauge | `core_version`, `frontend_version` | Core and frontend version info (always 1) |
+| **Version** | `chatbot_plugin_info` | Gauge | `plugin_id`, `version` | Plugin version info (always 1) |
 
-**Description:**
-Counts the total number of messages sent by users.
+### Notes
 
-### 2. Sentiment Analysis
-**Metric Name:** `chatbot_chat_sentiment_score`
-**Type:** Histogram
-**Labels:** 
-- `sender`: Who sent the message (`user`).
+**Sentiment Analysis**: Uses spaCy's `xx_sent_ud_sm` multilingual model with `spacytextblob` for polarity scoring. Only user messages are analyzed. Categories:
+- **Negative**: polarity < -0.05
+- **Neutral**: -0.05 ≤ polarity ≤ 0.05  
+- **Positive**: polarity > 0.05
 
-**Description:**
-Measures the sentiment polarity of messages (-1.0 to 1.0). Used to calculate average sentiment.
+**RAG Source Clustering**: Sources are automatically clustered for better aggregation (e.g., `example.com/services/s1` → `example.com/services`)
 
-**Metric Name:** `chatbot_chat_sentiment_counts`
-**Type:** Counter
-**Labels:**
-- `sender`: Who sent the message (`user`).
-- `type`: Sentiment category (`positive`, `neutral`, `negative`).
-
-**Description:**
-Counts the number of messages falling into each sentiment category:
-- **Negative**: Polarity < -0.05
-- **Neutral**: -0.05 <= Polarity <= 0.05
-- **Positive**: Polarity > 0.05
-
-**How it works:**
-This plugin uses spaCy with the `xx_sent_ud_sm` multilingual model and `spacytextblob` for sentiment analysis. The model provides polarity scores ranging from -1 (very negative) to 1 (very positive), making it lightweight and efficient for CPU usage across multiple languages.
-
-### 3. Token Usage
-**Metric Name:** `chatbot_llm_input_tokens_total` / `chatbot_llm_output_tokens_total`
-**Type:** Counter
-**Labels:**
-- `model`: The name of the LLM model used.
-
-**Description:**
-Total number of tokens sent to (input) and received from (output) the LLM.
-
-**Metric Name:** `chatbot_llm_input_tokens_avg` / `chatbot_llm_output_tokens_avg`
-**Type:** Gauge
-**Labels:**
-- `model`: The name of the LLM model used.
-
-**Description:**
-Average number of tokens per interaction.
-
-### 4. New Sessions
-**Metric Name:** `chatbot_chat_sessions_total`
-**Type:** Counter
-
-**Description:**
-Counts the number of unique users/sessions that have started a conversation since the last restart.
-
-### 5. RAG Usage
-**Metric Name:** `chatbot_rag_documents_retrieved_total`
-**Type:** Counter
-**Labels:** 
-- `source`: The source metadata of the retrieved document (clustered by path).
-
-**Description:**
-Tracks how often documents are retrieved from the vector memory. Sources are clustered (e.g., `example.com/services/s1` -> `example.com/services`) to provide better aggregation.
-
-### 6. Conversation Depth
-**Metric Name:** `chatbot_chat_messages_per_chat_avg`
-**Type:** Gauge
-
-**Description:**
-The average number of messages per chat session (since restart).
-
-**Metric Name:** `chatbot_chat_messages_per_chat_max`
-**Type:** Gauge
-
-**Description:**
-The maximum number of messages in a single chat session.
-**Type:** Gauge
-
-**Description:**
-The maximum number of messages in a single chat session.
-
-### 7. Response Time
-**Metric Name:** `chatbot_chat_response_time_seconds_sum` / `chatbot_chat_response_time_seconds_count`
-**Type:** Counter
-
-**Description:**
-Used to calculate the average response time of the bot (excluding fast replies/default messages).
-*Example Query:* `rate(chatbot_chat_response_time_seconds_sum[1h]) / rate(chatbot_chat_response_time_seconds_count[1h])`
-
-**Metric Name:** `chatbot_chat_response_time_seconds_max`
-**Type:** Gauge
-
-**Description:**
-The maximum response time recorded.
-
-### 8. Missed Context
-**Metric Name:** `chatbot_chat_no_relevant_memory_total`
-**Type:** Counter
-
-**Description:**
-Counts how many times the bot could not find relevant memories and sent the default fallback message (requires `ccat_context_guardian_enricher`).
-
-### 9. Version Info
-**Metric Name:** `chatbot_instance_info`
-**Type:** Gauge
-**Labels:**
-- `core_version`: The version of the Cheshire Cat Core.
-- `frontend_version`: The version of the Admin UI (if available).
-
-**Description:**
-Tracks the version of the running instance. Always set to 1.
-
-**Metric Name:** `chatbot_plugin_info`
-**Type:** Gauge
-**Labels:**
-- `plugin_id`: The ID of the plugin.
-- `version`: The version of the plugin.
-
-**Description:**
-Tracks the version of all installed plugins. Always set to 1.
-
-## Configuration
-
-You can enable or disable specific groups of metrics via the Cheshire Cat Admin UI:
-
-- **Enable Message Metrics**: Tracks total messages, sessions, and conversation depth.
-- **Enable Sentiment Analysis**: Tracks sentiment of messages.
-- **Enable RAG Metrics**: Tracks retrieved documents from memory.
+**Response Time**: Excludes fast replies and default messages. Calculate average with: `rate(chatbot_chat_response_time_seconds_sum[1h]) / rate(chatbot_chat_response_time_seconds_count[1h])`
 
 ## Requirements
 
 - Cheshire Cat AI
 - Prometheus (for data collection)
 - Grafana (recommended for visualization)
-- `spacy` and `spacytextblob` python packages (installed automatically if missing, but recommended to pre-install).
-- spaCy language model `xx_sent_ud_sm` (automatically downloaded on first use).
+- Python packages: `spacy`, `spacytextblob`, and `tomli` (automatically installed with the plugin)
+- spaCy language model `xx_sent_ud_sm` (automatically downloaded on first use)
+
+## Installation
+
+1. Install the plugin through the Cheshire Cat Admin UI
+2. The plugin will automatically start collecting metrics
+3. Configure Prometheus to scrape the `/custom/metrics` endpoint
+4. (Optional) Set up Grafana dashboards to visualize the metrics
 
 ## Log Schema
 
@@ -172,10 +81,11 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
   "component": "ccat_oc_analytics",
   "event": "<event_name>",
   "data": {
-    ... <event_specific_data>
+    // Event-specific data fields
   }
 }
 ```
+
 
 ### Event Types
 

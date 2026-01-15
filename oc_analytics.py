@@ -402,39 +402,31 @@ def before_cat_reads_message(user_message_json, cat):
     # Store start time for response time calculation
     cat.working_memory.oc_analytics_start_time = time.time()
 
-    settings = cat.mad_hatter.get_plugin().load_settings()
-
-    if settings.get("enable_message_metrics", True):
-        # Track user message
-        MESSAGE_COUNTER.labels(sender='user').inc()
-        
-        # Update user stats
-        user_id = cat.user_id
-        if user_id not in USER_MESSAGE_COUNTS:
-            NEW_SESSIONS.inc()
-            
-        USER_MESSAGE_COUNTS[user_id] = USER_MESSAGE_COUNTS.get(user_id, 0) + 1
-        
-        # Update Gauges
-        counts = list(USER_MESSAGE_COUNTS.values())
-        if counts:
-            AVG_MESSAGES_PER_CHAT.set(sum(counts) / len(counts))
-            MAX_MESSAGES_PER_CHAT.set(max(counts))
+    # Track user message
+    MESSAGE_COUNTER.labels(sender='user').inc()
     
-    # Sentiment
-    if settings.get("enable_sentiment_metrics", True):
-        text = user_message_json.get("text", "")
-        if text:
-            _track_sentiment('user', text)
+    # Update user stats
+    user_id = cat.user_id
+    if user_id not in USER_MESSAGE_COUNTS:
+        NEW_SESSIONS.inc()
+        
+    USER_MESSAGE_COUNTS[user_id] = USER_MESSAGE_COUNTS.get(user_id, 0) + 1
+    
+    # Update Gauges
+    counts = list(USER_MESSAGE_COUNTS.values())
+    if counts:
+        AVG_MESSAGES_PER_CHAT.set(sum(counts) / len(counts))
+        MAX_MESSAGES_PER_CHAT.set(max(counts))
+    
+    # Sentiment tracking
+    text = user_message_json.get("text", "")
+    if text:
+        _track_sentiment('user', text)
             
     return user_message_json
 
 @hook
 def after_cat_recalls_memories(cat):
-    settings = cat.mad_hatter.get_plugin().load_settings()
-    if not settings.get("enable_rag_metrics", True):
-        return
-
     # Declarative memories (RAG)
     # cat.working_memory.declarative_memories is a list of tuples/lists where the first element is the Document
     for memory in cat.working_memory.declarative_memories:

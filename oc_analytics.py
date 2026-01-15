@@ -1,6 +1,8 @@
 import time
 import json
 import os
+import sys
+import subprocess
 import tomli
 from cat.mad_hatter.mad_hatter import MadHatter
 from cat.mad_hatter.decorators import hook, endpoint
@@ -11,50 +13,193 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTEN
 
 from cat.convo.messages import CatMessage
 
-# Global variables for Transformers pipeline
-_sentiment_pipeline = None
+# Global variables for spaCy model
+_spacy_model = None
+_spacy_available = None
 
-def _get_sentiment_pipeline():
-    """Get or load the Transformers sentiment pipeline."""
-    global _sentiment_pipeline
-    if _sentiment_pipeline:
-        return _sentiment_pipeline
-        
+def _check_spacy_availability() -> bool:
+    """Check if spaCy is available."""
+    global _spacy_available
+    if _spacy_available is not None:
+        return _spacy_available
+    
     try:
-        from transformers import pipeline
-        # Use a distilled multilingual model for better CPU performance
-        # lxyuan/distilbert-base-multilingual-cased-sentiments-student
-        # ~540MB, supports many languages, faster than BERT
-        model_name = "lxyuan/distilbert-base-multilingual-cased-sentiments-student"
-        
-        log.info(json.dumps({
-            "component": "ccat_oc_analytics",
-            "event": "model_load_start",
-            "data": {
-                "model_name": model_name
-            }
-        }))
-        
-        _sentiment_pipeline = pipeline("sentiment-analysis", model=model_name, top_k=None)
-        
-        log.info(json.dumps({
-            "component": "ccat_oc_analytics",
-            "event": "model_load_success",
-            "data": {
-                "model_name": model_name
-            }
-        }))
-        return _sentiment_pipeline
-
+        import spacy
+        _spacy_available = True
     except ImportError:
         log.warning(json.dumps({
             "component": "ccat_oc_analytics",
             "event": "import_error",
             "data": {
-                "message": "Transformers or Torch not installed. Install with: pip install transformers torch"
+                "message": "spaCy not installed. Install with: pip install spacy"
             }
         }))
+        _spacy_available = False
+    
+    return _spacy_available
+
+def _download_model(model_name: str) -> bool:
+    """Download a spaCy model if not present."""
+    try:
+        log.info(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_download_start",
+            "data": {
+                "model_name": model_name
+            }
+        }))
+        
+        result = subprocess.run([
+            sys.executable, "-m", "spacy", "download", model_name
+        ], capture_output=True, text=True, timeout=300)
+        
+        if result.returncode == 0:
+            log.info(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_download_success",
+                "data": {
+                    "model_name": model_name
+                }
+            }))
+            return True
+        else:
+            log.error(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_download_error",
+                "data": {
+                    "model_name": model_name,
+                    "error": result.stderr
+                }
+            }))
+            return False
+    except subprocess.TimeoutExpired:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_download_timeout",
+            "data": {
+                "model_name": model_name
+            }
+        }))
+        return False
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_oc_analytics",
+            "event": "model_download_error",
+            "data": {
+                "model_name": model_name,
+                "error": str(e)
+            }
+        }))
+        return False
+
+def _get_spacy_model(model_name: str):
+    """Get or load a spaCy model, downloading if necessary."""
+    global _spacy_model
+    
+    if _spacy_model:
+        return _spacy_model
+    
+    if not _check_spacy_availability():
         return None
+    
+    try:
+        import spacy
+        
+        # First try to load the model
+        try:
+            log.info(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_load_start",
+                "data": {
+                    "model_name": model_name
+                }
+            }))
+            
+            nlp = spacy.load(model_name)
+            
+            # Add sentiment analysis component using spacytextblob
+            try:
+                from spacytextblob.spacytextblob import SpacyTextBlob
+                if 'spacytextblob' not in nlp.pipe_names:
+                    nlp.add_pipe('spacytextblob')
+                    log.info(json.dumps({
+                        "component": "ccat_oc_analytics",
+                        "event": "sentiment_component_added",
+                        "data": {
+                            "model_name": model_name
+                        }
+                    }))
+            except ImportError:
+                log.warning(json.dumps({
+                    "component": "ccat_oc_analytics",
+                    "event": "spacytextblob_not_found",
+                    "data": {
+                        "message": "spacytextblob not installed. Install with: pip install spacytextblob"
+                    }
+                }))
+            
+            _spacy_model = nlp
+            
+            log.info(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_load_success",
+                "data": {
+                    "model_name": model_name
+                }
+            }))
+            return nlp
+        except OSError:
+            # Model not found, try to download it
+            log.info(json.dumps({
+                "component": "ccat_oc_analytics",
+                "event": "model_not_found",
+                "data": {
+                    "model_name": model_name,
+                    "message": "Attempting to download..."
+                }
+            }))
+            
+            if _download_model(model_name):
+                # Try loading again after download
+                try:
+                    nlp = spacy.load(model_name)
+                    
+                    # Add sentiment analysis component using spacytextblob
+                    try:
+                        from spacytextblob.spacytextblob import SpacyTextBlob
+                        if 'spacytextblob' not in nlp.pipe_names:
+                            nlp.add_pipe('spacytextblob')
+                    except ImportError:
+                        log.warning(json.dumps({
+                            "component": "ccat_oc_analytics",
+                            "event": "spacytextblob_not_found",
+                            "data": {
+                                "message": "spacytextblob not installed. Install with: pip install spacytextblob"
+                            }
+                        }))
+                    
+                    _spacy_model = nlp
+                    log.info(json.dumps({
+                        "component": "ccat_oc_analytics",
+                        "event": "model_load_success",
+                        "data": {
+                            "model_name": model_name,
+                            "after_download": True
+                        }
+                    }))
+                    return nlp
+                except OSError:
+                    log.error(json.dumps({
+                        "component": "ccat_oc_analytics",
+                        "event": "model_load_error",
+                        "data": {
+                            "model_name": model_name,
+                            "error": "Failed to load even after download"
+                        }
+                    }))
+                    return None
+            else:
+                return None
     except Exception as e:
         log.error(json.dumps({
             "component": "ccat_oc_analytics",
@@ -66,27 +211,39 @@ def _get_sentiment_pipeline():
         return None
 
 def analyze_sentiment(text: str):
-    """Analyze sentiment using Transformers (Multilingual)."""
-    pipe = _get_sentiment_pipeline()
+    """Analyze sentiment using spaCy with spacytextblob.
     
-    if pipe:
+    Returns polarity score from -1 (negative) to 1 (positive).
+    Uses TextBlob sentiment analysis via spacytextblob extension.
+    """
+    model_name = "xx_sent_ud_sm"
+    nlp = _get_spacy_model(model_name)
+    
+    if nlp:
         try:
-            # Truncate text to avoid token limit errors (DistilBERT limit is 512 tokens)
-            # Using char limit as rough proxy to avoid tokenization overhead just for check
+            # Truncate text to avoid processing very long texts
             if len(text) > 2000:
                 text = text[:2000]
-                
-            results = pipe(text)
-            # results is [[{'label': 'positive', 'score': 0.9}, ...]]
             
-            scores = {r['label']: r['score'] for r in results[0]}
+            doc = nlp(text)
             
-            # Calculate weighted score (-1 to 1)
-            pos = scores.get('positive', 0.0)
-            neg = scores.get('negative', 0.0)
-            
-            # Result is positive score minus negative score
-            return pos - neg
+            # spacytextblob provides polarity in doc._.polarity (ranges from -1 to 1)
+            # and subjectivity in doc._.subjectivity (ranges from 0 to 1)
+            if hasattr(doc._, 'polarity'):
+                polarity = doc._.polarity
+                # Ensure the value is within expected range
+                return max(-1.0, min(1.0, polarity))
+            else:
+                # Fallback: calculate average polarity from sentences
+                if doc.sents:
+                    polarities = [
+                        sent._.polarity if hasattr(sent._, 'polarity') else 0.0 
+                        for sent in doc.sents
+                    ]
+                    if polarities:
+                        avg_polarity = sum(polarities) / len(polarities)
+                        return max(-1.0, min(1.0, avg_polarity))
+                return 0.0
             
         except Exception as e:
             log.error(json.dumps({
@@ -102,28 +259,43 @@ def analyze_sentiment(text: str):
 # Custom registry to avoid global pollution and control output
 _registry = CollectorRegistry()
 
-# Metrics
-MESSAGE_COUNTER = Counter('chat_messages_total', 'Total number of messages', ['sender'], registry=_registry)
-# Custom buckets for sentiment (-1 to 1)
-SENTIMENT_SCORE = Histogram('chat_sentiment_score', 'Sentiment score of messages', ['sender'], 
-                            buckets=[-1.0, -0.5, -0.2, 0.0, 0.2, 0.5, 1.0], registry=_registry)
-SENTIMENT_COUNTS = Counter('chat_sentiment_counts', 'Sentiment counts (sad, neutral, happy)', ['sender', 'type'], registry=_registry)
+# ============================================================================
+# Metrics Definition
+# ============================================================================
+# NOTE: Counters are cumulative. To see activity in a specific time range in Grafana,
+# use these query patterns:
+#   - increase(metric_name[5m])              -> total increase in 5 minutes
+#   - rate(metric_name[1m]) * 60             -> per-minute rate
+#   - increase(metric_name[$__interval])     -> adapts to selected time range
+#
+# Example Grafana queries:
+#   - increase(chatbot_chat_sessions_total[1h])                    -> new sessions in the last hour
+#   - increase(chatbot_chat_messages_total{sender="user"}[5m])     -> user messages in 5 min
+#   - rate(chatbot_chat_messages_total[1m]) * 60                   -> messages per minute
+# ============================================================================
 
-NEW_SESSIONS = Counter('chat_sessions_total', 'Total number of new chat sessions', registry=_registry)
-RAG_DOCUMENTS_RETRIEVED = Counter('rag_documents_retrieved_total', 'Total number of documents retrieved from RAG', ['source'], registry=_registry)
-AVG_MESSAGES_PER_CHAT = Gauge('chat_messages_per_chat_avg', 'Average number of messages per chat', registry=_registry)
-MAX_MESSAGES_PER_CHAT = Gauge('chat_messages_per_chat_max', 'Maximum number of messages in a single chat', registry=_registry)
+MESSAGE_COUNTER = Counter('chatbot_chat_messages_total', 'Total number of messages', ['sender'], registry=_registry)
+# Custom buckets for sentiment polarity (-1 to 1) from spacytextblob
+# Buckets: very negative, negative, slightly negative, neutral, slightly positive, positive, very positive
+SENTIMENT_SCORE = Histogram('chatbot_chat_sentiment_score', 'Sentiment polarity score of messages from spacytextblob', ['sender'], 
+                            buckets=[-1.0, -0.6, -0.2, -0.05, 0.05, 0.2, 0.6, 1.0], registry=_registry)
+SENTIMENT_COUNTS = Counter('chatbot_chat_sentiment_counts', 'Sentiment counts (negative, neutral, positive)', ['sender', 'type'], registry=_registry)
 
-LLM_INPUT_TOKENS_TOTAL = Counter('llm_input_tokens_total', 'Total input tokens', ['model'], registry=_registry)
-LLM_OUTPUT_TOKENS_TOTAL = Counter('llm_output_tokens_total', 'Total output tokens', ['model'], registry=_registry)
-LLM_INPUT_TOKENS_AVG = Gauge('llm_input_tokens_avg', 'Average input tokens', ['model'], registry=_registry)
-LLM_OUTPUT_TOKENS_AVG = Gauge('llm_output_tokens_avg', 'Average output tokens', ['model'], registry=_registry)
+NEW_SESSIONS = Counter('chatbot_chat_sessions_total', 'Total number of new chat sessions', registry=_registry)
+RAG_DOCUMENTS_RETRIEVED = Counter('chatbot_rag_documents_retrieved_total', 'Total number of documents retrieved from RAG', ['source'], registry=_registry)
+AVG_MESSAGES_PER_CHAT = Gauge('chatbot_chat_messages_per_chat_avg', 'Average number of messages per chat', registry=_registry)
+MAX_MESSAGES_PER_CHAT = Gauge('chatbot_chat_messages_per_chat_max', 'Maximum number of messages in a single chat', registry=_registry)
 
-NO_RELEVANT_MEMORY_COUNTER = Counter('chat_no_relevant_memory_total', 'Total number of times no relevant memory was found', registry=_registry)
+LLM_INPUT_TOKENS_TOTAL = Counter('chatbot_llm_input_tokens_total', 'Total input tokens', ['model'], registry=_registry)
+LLM_OUTPUT_TOKENS_TOTAL = Counter('chatbot_llm_output_tokens_total', 'Total output tokens', ['model'], registry=_registry)
+LLM_INPUT_TOKENS_AVG = Gauge('chatbot_llm_input_tokens_avg', 'Average input tokens', ['model'], registry=_registry)
+LLM_OUTPUT_TOKENS_AVG = Gauge('chatbot_llm_output_tokens_avg', 'Average output tokens', ['model'], registry=_registry)
 
-RESPONSE_TIME_SUM = Counter('chat_response_time_seconds_sum', 'Sum of response times in seconds', registry=_registry)
-RESPONSE_TIME_COUNT = Counter('chat_response_time_seconds_count', 'Count of responses for average time calculation', registry=_registry)
-RESPONSE_TIME_MAX = Gauge('chat_response_time_seconds_max', 'Maximum response time in seconds', registry=_registry)
+NO_RELEVANT_MEMORY_COUNTER = Counter('chatbot_chat_no_relevant_memory_total', 'Total number of times no relevant memory was found', registry=_registry)
+
+RESPONSE_TIME_SUM = Counter('chatbot_chat_response_time_seconds_sum', 'Sum of response times in seconds', registry=_registry)
+RESPONSE_TIME_COUNT = Counter('chatbot_chat_response_time_seconds_count', 'Count of responses for average time calculation', registry=_registry)
+RESPONSE_TIME_MAX = Gauge('chatbot_chat_response_time_seconds_max', 'Maximum response time in seconds', registry=_registry)
 
 CHATBOT_INSTANCE_INFO = Gauge('chatbot_instance_info', 'Global version information (Core and Frontend)', ['core_version', 'frontend_version'], registry=_registry)
 CHATBOT_PLUGIN_INFO = Gauge('chatbot_plugin_info', 'Plugin version information', ['plugin_id', 'version'], registry=_registry)
@@ -180,14 +352,23 @@ def _get_llm_name(cat):
         return "unknown"
 
 def _track_sentiment(sender, text):
+    """Track sentiment polarity and classify into negative/neutral/positive.
+    
+    Uses spacytextblob polarity score (-1 to 1):
+    - Negative: polarity < -0.05
+    - Neutral: -0.05 <= polarity <= 0.05
+    - Positive: polarity > 0.05
+    """
     sentiment = analyze_sentiment(text)
     SENTIMENT_SCORE.labels(sender=sender).observe(sentiment)
     
+    # Classify sentiment based on polarity thresholds
+    # TextBlob polarity around 0 is neutral, so we use a small threshold
     sentiment_type = "neutral"
-    if sentiment < -0.2:
-        sentiment_type = "sad"
-    elif sentiment > 0.2:
-        sentiment_type = "happy"
+    if sentiment < -0.05:
+        sentiment_type = "negative"
+    elif sentiment > 0.05:
+        sentiment_type = "positive"
         
     SENTIMENT_COUNTS.labels(sender=sender, type=sentiment_type).inc()
 

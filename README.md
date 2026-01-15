@@ -13,7 +13,7 @@ This plugin is essential for monitoring the health, engagement, and quality of y
 ## Features
 
 - **Prometheus Endpoint**: Exposes a `/custom/metrics` endpoint compatible with Prometheus.
-- **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using a multilingual Transformer model.
+- **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using spaCy with multilingual support.
 - **Token Usage**: Tracks input and output tokens per LLM model.
 - **RAG Tracking**: Tracks which documents are being retrieved from memory (with source clustering).
 - **Response Time**: Tracks average and max response times (excluding default messages).
@@ -25,7 +25,7 @@ This plugin is essential for monitoring the health, engagement, and quality of y
 Detailed breakdown of the metrics exposed by this plugin:
 
 ### 1. Message Volume
-**Metric Name:** `chat_messages_total`
+**Metric Name:** `chatbot_chat_messages_total`
 **Type:** Counter
 **Labels:** 
 - `sender`: Who sent the message (`user`).
@@ -34,7 +34,7 @@ Detailed breakdown of the metrics exposed by this plugin:
 Counts the total number of messages sent by users.
 
 ### 2. Sentiment Analysis
-**Metric Name:** `chat_sentiment_score`
+**Metric Name:** `chatbot_chat_sentiment_score`
 **Type:** Histogram
 **Labels:** 
 - `sender`: Who sent the message (`user`).
@@ -42,23 +42,23 @@ Counts the total number of messages sent by users.
 **Description:**
 Measures the sentiment polarity of messages (-1.0 to 1.0). Used to calculate average sentiment.
 
-**Metric Name:** `chat_sentiment_counts`
+**Metric Name:** `chatbot_chat_sentiment_counts`
 **Type:** Counter
 **Labels:**
 - `sender`: Who sent the message (`user`).
-- `type`: Sentiment category (`happy`, `sad`, `neutral`).
+- `type`: Sentiment category (`positive`, `neutral`, `negative`).
 
 **Description:**
 Counts the number of messages falling into each sentiment category:
-- **Sad**: Score < -0.2
-- **Neutral**: -0.2 <= Score <= 0.2
-- **Happy**: Score > 0.2
+- **Negative**: Polarity < -0.05
+- **Neutral**: -0.05 <= Polarity <= 0.05
+- **Positive**: Polarity > 0.05
 
 **How it works:**
-This plugin uses the `lxyuan/distilbert-base-multilingual-cased-sentiments-student` Transformer model. It is a lightweight, multilingual model optimized for CPU usage.
+This plugin uses spaCy with the `xx_sent_ud_sm` multilingual model and `spacytextblob` for sentiment analysis. The model provides polarity scores ranging from -1 (very negative) to 1 (very positive), making it lightweight and efficient for CPU usage across multiple languages.
 
 ### 3. Token Usage
-**Metric Name:** `llm_input_tokens_total` / `llm_output_tokens_total`
+**Metric Name:** `chatbot_llm_input_tokens_total` / `chatbot_llm_output_tokens_total`
 **Type:** Counter
 **Labels:**
 - `model`: The name of the LLM model used.
@@ -66,7 +66,7 @@ This plugin uses the `lxyuan/distilbert-base-multilingual-cased-sentiments-stude
 **Description:**
 Total number of tokens sent to (input) and received from (output) the LLM.
 
-**Metric Name:** `llm_input_tokens_avg` / `llm_output_tokens_avg`
+**Metric Name:** `chatbot_llm_input_tokens_avg` / `chatbot_llm_output_tokens_avg`
 **Type:** Gauge
 **Labels:**
 - `model`: The name of the LLM model used.
@@ -75,14 +75,14 @@ Total number of tokens sent to (input) and received from (output) the LLM.
 Average number of tokens per interaction.
 
 ### 4. New Sessions
-**Metric Name:** `chat_sessions_total`
+**Metric Name:** `chatbot_chat_sessions_total`
 **Type:** Counter
 
 **Description:**
 Counts the number of unique users/sessions that have started a conversation since the last restart.
 
 ### 5. RAG Usage
-**Metric Name:** `rag_documents_retrieved_total`
+**Metric Name:** `chatbot_rag_documents_retrieved_total`
 **Type:** Counter
 **Labels:** 
 - `source`: The source metadata of the retrieved document (clustered by path).
@@ -91,34 +91,38 @@ Counts the number of unique users/sessions that have started a conversation sinc
 Tracks how often documents are retrieved from the vector memory. Sources are clustered (e.g., `example.com/services/s1` -> `example.com/services`) to provide better aggregation.
 
 ### 6. Conversation Depth
-**Metric Name:** `chat_messages_per_chat_avg`
+**Metric Name:** `chatbot_chat_messages_per_chat_avg`
 **Type:** Gauge
 
 **Description:**
 The average number of messages per chat session (since restart).
 
-**Metric Name:** `chat_messages_per_chat_max`
+**Metric Name:** `chatbot_chat_messages_per_chat_max`
+**Type:** Gauge
+
+**Description:**
+The maximum number of messages in a single chat session.
 **Type:** Gauge
 
 **Description:**
 The maximum number of messages in a single chat session.
 
 ### 7. Response Time
-**Metric Name:** `chat_response_time_seconds_sum` / `chat_response_time_seconds_count`
+**Metric Name:** `chatbot_chat_response_time_seconds_sum` / `chatbot_chat_response_time_seconds_count`
 **Type:** Counter
 
 **Description:**
 Used to calculate the average response time of the bot (excluding fast replies/default messages).
-*Example Query:* `rate(chat_response_time_seconds_sum[1h]) / rate(chat_response_time_seconds_count[1h])`
+*Example Query:* `rate(chatbot_chat_response_time_seconds_sum[1h]) / rate(chatbot_chat_response_time_seconds_count[1h])`
 
-**Metric Name:** `chat_response_time_seconds_max`
+**Metric Name:** `chatbot_chat_response_time_seconds_max`
 **Type:** Gauge
 
 **Description:**
 The maximum response time recorded.
 
 ### 8. Missed Context
-**Metric Name:** `chat_no_relevant_memory_total`
+**Metric Name:** `chatbot_chat_no_relevant_memory_total`
 **Type:** Counter
 
 **Description:**
@@ -156,7 +160,8 @@ You can enable or disable specific groups of metrics via the Cheshire Cat Admin 
 - Cheshire Cat AI
 - Prometheus (for data collection)
 - Grafana (recommended for visualization)
-- `transformers` and `torch` python packages (installed automatically if missing, but recommended to pre-install).
+- `spacy` and `spacytextblob` python packages (installed automatically if missing, but recommended to pre-install).
+- spaCy language model `xx_sent_ud_sm` (automatically downloaded on first use).
 
 ## Log Schema
 
@@ -176,10 +181,16 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 
 | Event Name | Description | Data Fields |
 |------------|-------------|-------------|
-| `import_error` | Logged when transformers/torch are missing | `message` |
-| `model_load_start` | Logged when starting to load the model | `model_name` |
+| `import_error` | Logged when spacy/spacytextblob are missing | `message` |
+| `model_load_start` | Logged when starting to load the spaCy model | `model_name` |
 | `model_load_success` | Logged when model is successfully loaded | `model_name` |
-| `model_load_error` | Logged when model load fails | `error` |
+| `model_download_start` | Logged when starting to download the spaCy model | `model_name` |
+| `model_download_success` | Logged when model download completes | `model_name` |
+| `model_download_error` | Logged when model download fails | `model_name`, `error` |
+| `model_download_timeout` | Logged when model download times out | `model_name` |
+| `model_not_found` | Logged when model not found locally | `model_name`, `message` |
+| `sentiment_component_added` | Logged when spacytextblob component is added to pipeline | `model_name` |
+| `spacytextblob_not_found` | Logged when spacytextblob is not installed | `message` |
 | `sentiment_analysis_error` | Logged when sentiment analysis fails | `error` |
 | `rag_metrics_error` | Logged when RAG metrics tracking fails | `error` |
 | `token_tracking_error` | Logged when token tracking fails | `error` |

@@ -377,22 +377,32 @@ def _get_embedder_name(cat):
     except:
         return "unknown"
 
-@hook
-def before_rabbithole_insert_memory(doc, cat):
+@hook(priority=9)
+def before_rabbithole_stores_documents(docs, cat):
     try:
-        text = doc.page_content
         model_name = _get_embedder_name(cat)
         
         # Count tokens - using tiktoken's cl100k_base as a standard approximation
         # Ideally we'd use the specific tokenizer for the model, but this is a reasonable default
+        encoding = None
         try:
             encoding = tiktoken.get_encoding("cl100k_base")
-            tokens = len(encoding.encode(text))
         except Exception:
-             # Fallback if tiktoken fails
-             tokens = len(text.split()) 
+             pass
 
-        EMBEDDING_TOKENS_TOTAL.labels(model=model_name).inc(tokens)
+        for doc in docs:
+            text = doc.page_content
+            tokens = 0
+            try:
+                if encoding:
+                    tokens = len(encoding.encode(text))
+                else:
+                    tokens = len(text.split())
+            except Exception:
+                 # Fallback if tiktoken fails
+                 tokens = len(text.split()) 
+
+            EMBEDDING_TOKENS_TOTAL.labels(model=model_name).inc(tokens)
         
     except Exception as e:
         log.error(json.dumps({
@@ -403,7 +413,7 @@ def before_rabbithole_insert_memory(doc, cat):
             }
         }))
     
-    return doc
+    return docs
 
 def _track_sentiment(sender, text):
     """Track sentiment polarity and classify into negative/neutral/positive.

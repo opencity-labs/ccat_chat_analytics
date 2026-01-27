@@ -17,6 +17,7 @@ This plugin is essential for monitoring the health, engagement, and quality of y
 - **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using spaCy with multilingual support.
 - **Token Usage**: Tracks input and output tokens per LLM model.
 - **RAG Tracking**: Tracks which documents are being retrieved from memory (with source clustering).
+- **Memory Stats**: Tracks total points and unique sources stored in vector memory.
 - **Response Time**: Tracks average and max response times (excluding default messages).
 - **Missed Context**: Tracks when no relevant memory is found (requires Context Guardian).
 - **Session Stats**: Monitors active sessions and message depth.
@@ -46,6 +47,8 @@ All metrics exposed by this plugin:
 | **Context** | `chatbot_chat_no_relevant_memory_total` | Counter | - | Times no relevant memory found (requires Context Guardian) |
 | **Version** | `chatbot_instance_info` | Gauge | `core_version`, `frontend_version` | Core and frontend version info (always 1) |
 | **Version** | `chatbot_plugin_info` | Gauge | `plugin_id`, `version` | Plugin version info (always 1) |
+| **Memory** | `chatbot_vector_memory_points_total` | Gauge | `collection` | Total points in vector memory |
+| **Memory** | `chatbot_vector_memory_sources_total` | Gauge | `collection` | Unique sources in vector memory (declarative only) |
 
 ### Notes
 
@@ -109,6 +112,8 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 | `fast_reply_check_error` | Logged when checking for fast reply fails | `error` |
 | `core_version_error` | Logged when core version retrieval fails | `error` |
 | `plugin_version_error` | Logged when plugin version retrieval fails | `error` |
+| `memory_metrics_collection_error` | Logged when memory stats collection fails for a specific collection | `collection`, `error` |
+| `memory_metrics_error` | Logged when memory stats update fails globally | `error` |
 
 ---
 

@@ -1,6 +1,6 @@
 {
     "name": "Chat Analytics",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "A Cheshire Cat plugin to expose metrics for Prometheus.",
     "author_name": "OpenCity Labs",
     "author_url": "https://opencitylabs.it",

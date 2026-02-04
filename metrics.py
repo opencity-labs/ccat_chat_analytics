@@ -37,6 +37,9 @@ LLM_OUTPUT_TOKENS_AVG = Gauge('chatbot_llm_output_tokens_avg', 'Average output t
 
 EMBEDDING_TOKENS_TOTAL = Counter('chatbot_embedding_tokens_total', 'Total tokens used for embeddings', ['model'], registry=registry)
 
+# Browser language: counts messages by browser language code (e.g., 'en', 'es')
+BROWSER_LANGUAGE_MESSAGES = Counter('chatbot_chat_messages_by_browser_language_total', 'Total number of messages grouped by browser language', ['lang'], registry=registry)
+
 NO_RELEVANT_MEMORY_COUNTER = Counter('chatbot_chat_no_relevant_memory_total', 'Total number of times no relevant memory was found', registry=registry)
 
 RESPONSE_TIME_SUM = Counter('chatbot_chat_response_time_seconds_sum', 'Sum of response times in seconds', registry=registry)
@@ -48,3 +51,6 @@ CHATBOT_PLUGIN_INFO = Gauge('chatbot_plugin_info', 'Plugin version information',
 
 VECTOR_MEMORY_POINTS_TOTAL = Gauge('chatbot_vector_memory_points_total', 'Total number of points in vector memory', ['collection'], registry=registry)
 VECTOR_MEMORY_SOURCES_TOTAL = Gauge('chatbot_vector_memory_sources_total', 'Total number of unique sources in vector memory', ['collection'], registry=registry)
+
+FEEDBACK_THUMB_UP_TOTAL = Counter('chatbot_feedback_thumb_up_total', 'Total number of positive feedback (thumbs up)', registry=registry)
+FEEDBACK_THUMB_DOWN_TOTAL = Counter('chatbot_feedback_thumb_down_total', 'Total number of negative feedback (thumbs down)', registry=registry)

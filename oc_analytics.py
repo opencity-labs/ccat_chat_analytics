@@ -8,6 +8,9 @@ from cat.log import log
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from cat.looking_glass.cheshire_cat import CheshireCat
+from fastapi import Header, HTTPException
+from cat.env import get_env
+import jwt
 
 # Import metrics and registry
 from .metrics import (
@@ -15,7 +18,9 @@ from .metrics import (
     CHATBOT_INSTANCE_INFO,
     CHATBOT_PLUGIN_INFO,
     VECTOR_MEMORY_POINTS_TOTAL,
-    VECTOR_MEMORY_SOURCES_TOTAL
+    VECTOR_MEMORY_SOURCES_TOTAL,
+    FEEDBACK_THUMB_UP_TOTAL,
+    FEEDBACK_THUMB_DOWN_TOTAL
 )
 
 
@@ -174,3 +179,67 @@ def metrics():
         
     filtered_data = "\n".join(lines)
     return Response(filtered_data, media_type=CONTENT_TYPE_LATEST)
+
+
+@endpoint.post("/thumbup")
+def thumbup(payload: dict, authorization: str = Header(None)):
+    
+    # 1. Validate Authentication
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authentication required")
+        
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+        
+    token = authorization.split(" ")[1]
+    
+    try:
+        # Get JWT config from env
+        jwt_secret = get_env("CCAT_JWT_SECRET")
+        # Default to HS256 if not set, as typical fallback, but plugin uses get_env strict
+        jwt_algo = get_env("CCAT_JWT_ALGORITHM") 
+        
+        if not jwt_secret:
+             log.error("JWT Secret not configured in environment")
+             raise HTTPException(status_code=500, detail="Server misconfiguration")
+             
+        if not jwt_algo:
+             jwt_algo = "HS256" # Fallback just in case
+
+        # Decode token
+        decoded = jwt.decode(token, jwt_secret, algorithms=[jwt_algo])
+        
+        # Verify it is a temporary session
+        user_id = decoded.get("sub")
+        
+        # Get plugin settings to check prefix
+        mad_hatter = MadHatter()
+        auth_plugin = mad_hatter.plugins.get("ccat_temporary_chat_authentication")
+        
+        if not auth_plugin:
+            log.warning("Received thumbup but ccat_temporary_chat_authentication plugin is not loaded")
+            raise HTTPException(status_code=403, detail="Authentication plugin missing")
+            
+        settings = auth_plugin.load_settings()
+        prefix = settings.get("session_prefix", "sess_")
+        
+        if not user_id or not user_id.startswith(prefix):
+             raise HTTPException(status_code=403, detail="Not a temporary session")
+             
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error validating thumbup token: {e}")
+        raise HTTPException(status_code=500, detail="Validation error")
+
+    # 2. Record Metric
+    if payload.get("value"):
+        FEEDBACK_THUMB_UP_TOTAL.inc()
+    else:
+        FEEDBACK_THUMB_DOWN_TOTAL.inc()
+
+    return {"status": "success"}

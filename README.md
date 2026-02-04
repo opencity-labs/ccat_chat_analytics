@@ -30,6 +30,7 @@ All metrics exposed by this plugin:
 | Category | Metric Name | Type | Labels | Description |
 |----------|-------------|------|--------|-------------|
 | **Messages** | `chatbot_chat_messages_total` | Counter | `sender` (user) | Total messages sent by users |
+| **Messages** | `chatbot_chat_messages_by_browser_language_total` | Counter | `lang` | Count of incoming messages grouped by browser language (e.g., `en`, `es`) |
 | **Sessions** | `chatbot_chat_sessions_total` | Counter | - | Unique users/sessions since restart |
 | **Conversation Depth** | `chatbot_chat_messages_per_chat_avg` | Gauge | - | Average messages per chat session |
 | **Conversation Depth** | `chatbot_chat_messages_per_chat_max` | Gauge | - | Maximum messages in a single session |
@@ -49,6 +50,8 @@ All metrics exposed by this plugin:
 | **Version** | `chatbot_plugin_info` | Gauge | `plugin_id`, `version` | Plugin version info (always 1) |
 | **Memory** | `chatbot_vector_memory_points_total` | Gauge | `collection` | Total points in vector memory |
 | **Memory** | `chatbot_vector_memory_sources_total` | Gauge | `collection` | Unique sources in vector memory (declarative only) |
+| **Feedback** | `chatbot_feedback_thumb_up_total` | Counter | - | Total positive feedback (thumbs up) |
+| **Feedback** | `chatbot_feedback_thumb_down_total` | Counter | - | Total negative feedback (thumbs down) |
 
 ### Notes
 
@@ -60,6 +63,28 @@ All metrics exposed by this plugin:
 **RAG Source Clustering**: Sources are automatically clustered for better aggregation (e.g., `example.com/services/s1` → `example.com/services`)
 
 **Response Time**: Excludes fast replies and default messages. Calculate average with: `rate(chatbot_chat_response_time_seconds_sum[1h]) / rate(chatbot_chat_response_time_seconds_count[1h])`
+
+## Feedback Endpoint
+
+The plugin exposes a `/thumbup` POST endpoint to collect user feedback. This endpoint is designed to work with the `ccat_temporary_chat_authentication` plugin.
+
+**Request:**
+- **URL**: `/custom/thumbup`
+- **Method**: `POST`
+- **Headers**: 
+  - `Authorization`: Bearer `<jwt_token_from_temp_auth>`
+  - `Content-Type`: `application/json`
+- **Body**:
+  ```json
+  {
+      "thumbup": true
+  }
+  ```
+  *(Send `true` for positive feedback, `false` or omit for negative)*
+
+**Validation**:
+- The JWT token must be valid and signed by the Cat's configured secret.
+- The user ID in the token must start with the `session_prefix` configured in `ccat_temporary_chat_authentication`.
 
 ## Requirements
 
@@ -114,6 +139,7 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 | `plugin_version_error` | Logged when plugin version retrieval fails | `error` |
 | `memory_metrics_collection_error` | Logged when memory stats collection fails for a specific collection | `collection`, `error` |
 | `memory_metrics_error` | Logged when memory stats update fails globally | `error` |
+| `browser_language_tracking_error` | Logged when browser language extraction or tracking fails | `error` |
 
 ---
 

@@ -6,7 +6,7 @@ from cat.log import log
 from cat.db import crud
 from cat.convo.messages import CatMessage
 from .metrics import (
-    MESSAGE_COUNTER, SENTIMENT_SCORE, SENTIMENT_COUNTS, NEW_SESSIONS, RAG_DOCUMENTS_RETRIEVED,
+    MESSAGE_COUNTER, BROWSER_LANGUAGE_MESSAGES, SENTIMENT_SCORE, SENTIMENT_COUNTS, NEW_SESSIONS, RAG_DOCUMENTS_RETRIEVED,
     AVG_MESSAGES_PER_CHAT, MAX_MESSAGES_PER_CHAT, LLM_INPUT_TOKENS_TOTAL, LLM_OUTPUT_TOKENS_TOTAL,
     LLM_INPUT_TOKENS_AVG, LLM_OUTPUT_TOKENS_AVG, EMBEDDING_TOKENS_TOTAL, NO_RELEVANT_MEMORY_COUNTER,
     RESPONSE_TIME_SUM, RESPONSE_TIME_COUNT, RESPONSE_TIME_MAX
@@ -178,7 +178,19 @@ def before_cat_reads_message(user_message_json, cat):
 
     # Track user message
     MESSAGE_COUNTER.labels(sender='user').inc()
-    
+
+    # Browser language tracking
+    info = user_message_json.get('info', {})
+    lang = None
+    if isinstance(info, dict):
+        bl = info.get('browser_language')
+        if bl and isinstance(bl, str):
+            lang = bl.split('-')[0].lower()
+    elif isinstance(info, str):
+        lang = info.split('-')[0].lower()
+    if lang:
+        BROWSER_LANGUAGE_MESSAGES.labels(lang=lang).inc()
+
     # Update user stats
     user_id = cat.user_id
     if user_id not in USER_MESSAGE_COUNTS:

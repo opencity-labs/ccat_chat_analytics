@@ -183,7 +183,7 @@ def before_cat_reads_message(user_message_json, cat):
     info = user_message_json.get('info', {})
     lang = None
     if isinstance(info, dict):
-        bl = info.get('browser_language')
+        bl = info.get('browser_lang')
         if bl and isinstance(bl, str):
             lang = bl.split('-')[0].lower()
     elif isinstance(info, str):

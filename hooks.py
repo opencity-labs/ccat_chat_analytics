@@ -9,7 +9,8 @@ from .metrics import (
     MESSAGE_COUNTER, BROWSER_LANGUAGE_MESSAGES, SENTIMENT_SCORE, SENTIMENT_COUNTS, NEW_SESSIONS, RAG_DOCUMENTS_RETRIEVED,
     AVG_MESSAGES_PER_CHAT, MAX_MESSAGES_PER_CHAT, LLM_INPUT_TOKENS_TOTAL, LLM_OUTPUT_TOKENS_TOTAL,
     LLM_INPUT_TOKENS_AVG, LLM_OUTPUT_TOKENS_AVG, EMBEDDING_TOKENS_TOTAL, NO_RELEVANT_MEMORY_COUNTER,
-    RESPONSE_TIME_SUM, RESPONSE_TIME_COUNT, RESPONSE_TIME_MAX
+    RESPONSE_TIME_SUM, RESPONSE_TIME_COUNT, RESPONSE_TIME_MAX,
+    TRANSLATE_INPUT_TOKENS_TOTAL, TRANSLATE_OUTPUT_TOKENS_TOTAL
 )
 from .sentiment import analyze_sentiment
 
@@ -269,7 +270,7 @@ def fast_reply(message, cat):
         
     return message
 
-@hook
+@hook(priority=0)
 def before_cat_sends_message(message, cat):
     # Response Time Tracking
     # We do this here to capture the full processing time for normal responses
@@ -311,7 +312,25 @@ def before_cat_sends_message(message, cat):
                 LLM_OUTPUT_TOKENS_TOTAL.labels(model=model_name).inc(output_tokens)
                 
                 _update_llm_stats(model_name, input_tokens, output_tokens)
-                
+   
+        # Track Translation Tokens (if present in cat instance)        
+        if hasattr(cat, "translation_usage") and cat.translation_usage:
+            usage = cat.translation_usage
+            
+            input_tokens = usage.get("input", 0)
+            output_tokens = usage.get("output", 0)
+            
+            # We assume the model is the one used by language_guardian (gemini-2.5-flash-lite)
+            # Future improvement: store model name in usage dict as well
+            model_name = "gemini-2.5-flash-lite"
+            
+            if input_tokens > 0:
+                TRANSLATE_INPUT_TOKENS_TOTAL.labels(model=model_name).inc(input_tokens)
+            if output_tokens > 0:
+                TRANSLATE_OUTPUT_TOKENS_TOTAL.labels(model=model_name).inc(output_tokens)
+            # Clear usage to avoid double counting
+            del cat.translation_usage
+             
     except Exception as e:
         log.error(json.dumps({
             "component": "ccat_oc_analytics",

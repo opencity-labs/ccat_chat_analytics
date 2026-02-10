@@ -143,6 +143,12 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 
 ---
 
+## TODO
+
+- [ ] aggregate translation token usage to normal token usage metrics for unified reporting
+
+---
+
 Author: OpenCity Labs
 
 LinkedIn: https://www.linkedin.com/company/opencity-italia/

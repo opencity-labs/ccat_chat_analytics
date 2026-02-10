@@ -2,6 +2,7 @@ import json
 import sys
 import subprocess
 from cat.log import log
+from cat.mad_hatter.decorators import hook
 
 # Global variables for spaCy model
 _spacy_model = None
@@ -245,3 +246,9 @@ def analyze_sentiment(text: str):
             }))
             return 0.0
     return 0.0
+
+
+@hook
+def after_cat_bootstrap(cat):
+    # Pre-download the SpaCy model for sentiment analysis
+    _get_spacy_model("xx_sent_ud_sm")

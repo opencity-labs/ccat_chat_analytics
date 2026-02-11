@@ -35,9 +35,6 @@ LLM_OUTPUT_TOKENS_TOTAL = Counter('chatbot_llm_output_tokens_total', 'Total outp
 LLM_INPUT_TOKENS_AVG = Gauge('chatbot_llm_input_tokens_avg', 'Average input tokens', ['model'], registry=registry)
 LLM_OUTPUT_TOKENS_AVG = Gauge('chatbot_llm_output_tokens_avg', 'Average output tokens', ['model'], registry=registry)
 
-TRANSLATE_INPUT_TOKENS_TOTAL = Counter('chatbot_translate_input_tokens_total', 'Total input tokens for translation', ['model'], registry=registry)
-TRANSLATE_OUTPUT_TOKENS_TOTAL = Counter('chatbot_translate_output_tokens_total', 'Total output tokens for translation', ['model'], registry=registry)
-
 EMBEDDING_TOKENS_TOTAL = Counter('chatbot_embedding_tokens_total', 'Total tokens used for embeddings', ['model'], registry=registry)
 
 # Browser language: counts messages by browser language code (e.g., 'en', 'es')

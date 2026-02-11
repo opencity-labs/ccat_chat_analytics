@@ -14,7 +14,7 @@ This plugin is essential for monitoring the health, engagement, and quality of y
 
 - **Zero Configuration**: All metrics are automatically collected without any setup required.
 - **Prometheus Endpoint**: Exposes a `/custom/metrics` endpoint compatible with Prometheus.
-- **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using spaCy with multilingual support.
+- **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using spaCy with multilingual support. --> *in development*
 - **Token Usage**: Tracks input and output tokens per LLM model.
 - **RAG Tracking**: Tracks which documents are being retrieved from memory (with source clustering).
 - **Memory Stats**: Tracks total points and unique sources stored in vector memory.
@@ -77,7 +77,7 @@ The plugin exposes a `/thumbup` POST endpoint to collect user feedback. This end
 - **Body**:
   ```json
   {
-      "thumbup": true
+      "value": true
   }
   ```
   *(Send `true` for positive feedback, `false` or omit for negative)*
@@ -132,6 +132,7 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 | `spacytextblob_not_found` | Logged when spacytextblob is not installed | `message` |
 | `sentiment_analysis_error` | Logged when sentiment analysis fails | `error` |
 | `rag_metrics_error` | Logged when RAG metrics tracking fails | `error` |
+| `embedding_token_tracking_error` | Logged when embedding token tracking fails | `error` |
 | `token_tracking_error` | Logged when token tracking fails | `error` |
 | `response_time_error` | Logged when response time tracking fails | `error` |
 | `fast_reply_check_error` | Logged when checking for fast reply fails | `error` |
@@ -139,13 +140,6 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 | `plugin_version_error` | Logged when plugin version retrieval fails | `error` |
 | `memory_metrics_collection_error` | Logged when memory stats collection fails for a specific collection | `collection`, `error` |
 | `memory_metrics_error` | Logged when memory stats update fails globally | `error` |
-| `browser_language_tracking_error` | Logged when browser language extraction or tracking fails | `error` |
-
----
-
-## TODO
-
-- [ ] aggregate translation token usage to normal token usage metrics for unified reporting
 
 ---
 

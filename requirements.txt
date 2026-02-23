@@ -1,4 +1,4 @@
 prometheus-client
 spacytextblob
 spacy
-click>=8.0.0
+typer<0.10.0

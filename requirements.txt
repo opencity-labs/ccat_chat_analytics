@@ -1,3 +1,4 @@
 prometheus-client
 spacytextblob
 spacy
+click>=8.0.0

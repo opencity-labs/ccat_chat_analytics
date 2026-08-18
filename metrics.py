@@ -1,4 +1,4 @@
-from prometheus_client import Counter, Histogram, Gauge, CollectorRegistry
+from prometheus_client import Counter, Gauge, CollectorRegistry
 
 # Custom registry to avoid global pollution and control output
 registry = CollectorRegistry()
@@ -19,11 +19,6 @@ registry = CollectorRegistry()
 # ============================================================================
 
 MESSAGE_COUNTER = Counter('chatbot_chat_messages_total', 'Total number of messages', ['sender'], registry=registry)
-# Custom buckets for sentiment polarity (-1 to 1) from spacytextblob
-# Buckets: very negative, negative, slightly negative, neutral, slightly positive, positive, very positive
-SENTIMENT_SCORE = Histogram('chatbot_chat_sentiment_score', 'Sentiment polarity score of messages from spacytextblob', ['sender'], 
-                            buckets=[-1.0, -0.6, -0.2, -0.05, 0.05, 0.2, 0.6, 1.0], registry=registry)
-SENTIMENT_COUNTS = Counter('chatbot_chat_sentiment_counts', 'Sentiment counts (negative, neutral, positive)', ['sender', 'type'], registry=registry)
 
 NEW_SESSIONS = Counter('chatbot_chat_sessions_total', 'Total number of new chat sessions', registry=registry)
 RAG_DOCUMENTS_RETRIEVED = Counter('chatbot_rag_documents_retrieved_total', 'Total number of documents retrieved from RAG', ['source'], registry=registry)

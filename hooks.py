@@ -8,8 +8,6 @@ from cat.convo.messages import CatMessage
 from .metrics import (
     MESSAGE_COUNTER,
     BROWSER_LANGUAGE_MESSAGES,
-    SENTIMENT_SCORE,
-    SENTIMENT_COUNTS,
     NEW_SESSIONS,
     RAG_DOCUMENTS_RETRIEVED,
     AVG_MESSAGES_PER_CHAT,
@@ -24,7 +22,6 @@ from .metrics import (
     RESPONSE_TIME_COUNT,
     RESPONSE_TIME_MAX,
 )
-from .sentiment import analyze_sentiment
 
 # Global state for simple tracking (Note: this resets on restart and grows with unique users)
 USER_MESSAGE_COUNTS = {}
@@ -146,28 +143,6 @@ def before_rabbithole_stores_documents(docs, cat):
     return docs
 
 
-def _track_sentiment(sender, text):
-    """Track sentiment polarity and classify into negative/neutral/positive.
-
-    Uses spacytextblob polarity score (-1 to 1):
-    - Negative: polarity < -0.05
-    - Neutral: -0.05 <= polarity <= 0.05
-    - Positive: polarity > 0.05
-    """
-    sentiment = analyze_sentiment(text)
-    SENTIMENT_SCORE.labels(sender=sender).observe(sentiment)
-
-    # Classify sentiment based on polarity thresholds
-    # TextBlob polarity around 0 is neutral, so we use a small threshold
-    sentiment_type = "neutral"
-    if sentiment < -0.05:
-        sentiment_type = "negative"
-    elif sentiment > 0.05:
-        sentiment_type = "positive"
-
-    SENTIMENT_COUNTS.labels(sender=sender, type=sentiment_type).inc()
-
-
 def _cluster_source(source: str) -> str:
     if not source:
         return "unknown"
@@ -226,11 +201,6 @@ def before_cat_reads_message(user_message_json, cat):
     if counts:
         AVG_MESSAGES_PER_CHAT.set(sum(counts) / len(counts))
         MAX_MESSAGES_PER_CHAT.set(max(counts))
-
-    # Sentiment tracking
-    text = user_message_json.get("text", "")
-    if text:
-        _track_sentiment("user", text)
 
     return user_message_json
 

@@ -1,4 +1,2 @@
 prometheus-client
-spacytextblob
-spacy
 typer<0.10.0

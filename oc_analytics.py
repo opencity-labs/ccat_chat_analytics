@@ -171,10 +171,7 @@ def metrics():
             
             if metric_name.endswith('_created'):
                 continue
-                
-            if metric_name == 'chat_sentiment_score_bucket':
-                continue
-                
+
         lines.append(line)
         
     filtered_data = "\n".join(lines)

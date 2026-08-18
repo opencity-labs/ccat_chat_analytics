@@ -2,11 +2,11 @@
 
 [![Chat Analytics](https://custom-icon-badges.demolab.com/static/v1?label=&message=awesome+plugin&color=F4F4F5&style=for-the-badge&logo=cheshire_cat_black)](https://)
 
-A comprehensive analytics plugin for the Cheshire Cat AI that exposes Prometheus metrics about chat usage, sentiment, token usage, and RAG performance.
+A comprehensive analytics plugin for the Cheshire Cat AI that exposes Prometheus metrics about chat usage, token usage, and RAG performance.
 
 ## Description
 
-**Chat Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, user sentiment, session statistics, token usage, and document retrieval usage. All metrics are automatically enabled and collected without any configuration needed.
+**Chat Analytics** integrates the Cheshire Cat with Prometheus to provide real-time insights into how your chatbot is being used. It tracks message volume, session statistics, token usage, and document retrieval usage. All metrics are automatically enabled and collected without any configuration needed.
 
 This plugin is essential for monitoring the health, engagement, and quality of your AI service.
 
@@ -14,7 +14,6 @@ This plugin is essential for monitoring the health, engagement, and quality of y
 
 - **Zero Configuration**: All metrics are automatically collected without any setup required.
 - **Prometheus Endpoint**: Exposes a `/custom/metrics` endpoint compatible with Prometheus.
-- **Sentiment Analysis**: Automatically analyzes the sentiment of user messages using spaCy with multilingual support. --> *in development*
 - **Token Usage**: Tracks input and output tokens per LLM model.
 - **RAG Tracking**: Tracks which documents are being retrieved from memory (with source clustering).
 - **Memory Stats**: Tracks total points and unique sources stored in vector memory.
@@ -34,8 +33,6 @@ All metrics exposed by this plugin:
 | **Sessions** | `chatbot_chat_sessions_total` | Counter | - | Unique users/sessions since restart |
 | **Conversation Depth** | `chatbot_chat_messages_per_chat_avg` | Gauge | - | Average messages per chat session |
 | **Conversation Depth** | `chatbot_chat_messages_per_chat_max` | Gauge | - | Maximum messages in a single session |
-| **Sentiment** | `chatbot_chat_sentiment_score` | Histogram | `sender` (user) | Sentiment polarity (-1.0 to 1.0) for calculating averages |
-| **Sentiment** | `chatbot_chat_sentiment_counts` | Counter | `sender` (user), `type` (positive/neutral/negative) | Count of messages by sentiment category |
 | **Tokens** | `chatbot_llm_input_tokens_total` | Counter | `model` | Total input tokens sent to LLM |
 | **Tokens** | `chatbot_llm_output_tokens_total` | Counter | `model` | Total output tokens received from LLM |
 | **Tokens** | `chatbot_llm_input_tokens_avg` | Gauge | `model` | Average input tokens per interaction |
@@ -54,11 +51,6 @@ All metrics exposed by this plugin:
 | **Feedback** | `chatbot_feedback_thumb_down_total` | Counter | - | Total negative feedback (thumbs down) |
 
 ### Notes
-
-**Sentiment Analysis**: Uses spaCy's `xx_sent_ud_sm` multilingual model with `spacytextblob` for polarity scoring. Only user messages are analyzed. Categories:
-- **Negative**: polarity < -0.05
-- **Neutral**: -0.05 ≤ polarity ≤ 0.05  
-- **Positive**: polarity > 0.05
 
 **RAG Source Clustering**: Sources are automatically clustered for better aggregation (e.g., `example.com/services/s1` → `example.com/services`)
 
@@ -91,8 +83,7 @@ The plugin exposes a `/thumbup` POST endpoint to collect user feedback. This end
 - Cheshire Cat AI
 - Prometheus (for data collection)
 - Grafana (recommended for visualization)
-- Python packages: `spacy`, `spacytextblob`, and `tomli` (automatically installed with the plugin)
-- spaCy language model `xx_sent_ud_sm` (automatically downloaded on first use)
+- Python packages: `prometheus-client`, `typer`, and `tomli` (automatically installed with the plugin)
 
 ## Installation
 
@@ -120,17 +111,6 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 
 | Event Name | Description | Data Fields |
 |------------|-------------|-------------|
-| `import_error` | Logged when spacy/spacytextblob are missing | `message` |
-| `model_load_start` | Logged when starting to load the spaCy model | `model_name` |
-| `model_load_success` | Logged when model is successfully loaded | `model_name` |
-| `model_download_start` | Logged when starting to download the spaCy model | `model_name` |
-| `model_download_success` | Logged when model download completes | `model_name` |
-| `model_download_error` | Logged when model download fails | `model_name`, `error` |
-| `model_download_timeout` | Logged when model download times out | `model_name` |
-| `model_not_found` | Logged when model not found locally | `model_name`, `message` |
-| `sentiment_component_added` | Logged when spacytextblob component is added to pipeline | `model_name` |
-| `spacytextblob_not_found` | Logged when spacytextblob is not installed | `message` |
-| `sentiment_analysis_error` | Logged when sentiment analysis fails | `error` |
 | `rag_metrics_error` | Logged when RAG metrics tracking fails | `error` |
 | `embedding_token_tracking_error` | Logged when embedding token tracking fails | `error` |
 | `token_tracking_error` | Logged when token tracking fails | `error` |
